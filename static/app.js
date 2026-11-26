@@ -174,6 +174,8 @@
       loadAnalyticsAndEvents();
     }
     if (tab === "system") loadSystemTab();
+    const scroller = document.querySelector(".main-content");
+    if (scroller) scroller.scrollTop = 0;
   }
 
   function autoChooseDirection(live) {
@@ -1219,10 +1221,11 @@
 
       if (shouldScroll) {
         const target = document.querySelector(st.selector);
-        if (target) {
+        const scroller = document.querySelector(".main-content");
+        if (target && scroller) {
           const topBarH = document.querySelector(".top-bar")?.offsetHeight || 74;
-          const absTop = target.getBoundingClientRect().top + window.scrollY;
-          window.scrollTo({ top: Math.max(0, absTop - topBarH - 14), behavior: "instant" });
+          const delta = target.getBoundingClientRect().top - topBarH - 14;
+          scroller.scrollTo({ top: Math.max(0, scroller.scrollTop + delta), behavior: "instant" });
         }
       }
       const overlay = $("tour-overlay");
@@ -1271,15 +1274,13 @@
       }
     });
     window.addEventListener("resize", schedulePosition);
-    window.addEventListener(
-      "scroll",
-      () => {
-        if (!isOpen) return;
-        $("tour-overlay").classList.remove("tour-animating");
-        positionSpotlight();
-      },
-      { passive: true }
-    );
+    const onTourScroll = () => {
+      if (!isOpen) return;
+      $("tour-overlay").classList.remove("tour-animating");
+      positionSpotlight();
+    };
+    document.querySelector(".main-content")?.addEventListener("scroll", onTourScroll, { passive: true });
+    window.addEventListener("scroll", onTourScroll, { passive: true });
 
     $("btn-open-tutorial").addEventListener("click", () => openTutorial(0));
     $("btn-replay-tutorial").addEventListener("click", () => openTutorial(0));
