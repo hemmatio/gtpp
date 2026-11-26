@@ -123,7 +123,9 @@
   }
 
   function svgIcon(name, cls = "") {
-    return `<svg class="ico ${cls}"><use href="/static/icons.svg#ico-${name}"></use></svg>`;
+    const px = cls.split(/\s+/).includes("sm") ? 14 : 16;
+    const base = window.__GTPP_ICONS_URL || "/static/icons.svg";
+    return `<svg class="ico ${cls}" width="${px}" height="${px}" aria-hidden="true"><use href="${base}#ico-${name}"></use></svg>`;
   }
 
   function tipBtn(key) {

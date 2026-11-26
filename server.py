@@ -1,6 +1,7 @@
 """GOTracker++ HTTP + SSE + PWA server (aiohttp)."""
 
 import asyncio
+import hashlib
 import json
 import math
 import struct
@@ -224,9 +225,35 @@ def _build_live_payload(db: Database, poller: TrackerPoller, user_id: str) -> di
 routes = web.RouteTableDef()
 
 
+def compute_asset_version() -> str:
+    """Hash core frontend assets so every deploy busts Cloudflare/browser caches."""
+    h = hashlib.sha256()
+    for name in ("styles.css", "app.js", "icons.svg"):
+        fpath = STATIC_DIR / name
+        if fpath.is_file():
+            h.update(fpath.read_bytes())
+    return h.hexdigest()[:8]
+
+
 @routes.get("/")
 async def handle_index(request: web.Request) -> web.Response:
-    return web.FileResponse(STATIC_DIR / "index.html")
+    ver = request.app.get("asset_version", "1")
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    html = (
+        html.replace("/static/styles.css", f"/static/styles.css?v={ver}")
+        .replace("/static/app.js", f"/static/app.js?v={ver}")
+        .replace("/static/icons.svg", f"/static/icons.svg?v={ver}")
+        .replace(
+            "</head>",
+            f'  <script>window.__GTPP_ICONS_URL="/static/icons.svg?v={ver}";</script>\n</head>',
+        )
+    )
+    return web.Response(
+        text=html,
+        content_type="text/html",
+        charset="utf-8",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @routes.get("/manifest.json")
@@ -243,7 +270,7 @@ async def handle_sw(request: web.Request) -> web.Response:
         content_type="application/javascript",
         headers={
             "Service-Worker-Allowed": "/",
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
         },
     )
 
@@ -256,7 +283,10 @@ async def handle_static(request: web.Request) -> web.Response:
     fpath = (STATIC_DIR / fname).resolve()
     if not str(fpath).startswith(str(STATIC_DIR.resolve())) or not fpath.is_file():
         raise web.HTTPNotFound()
-    return web.FileResponse(fpath)
+    headers = {}
+    if fpath.suffix.lower() in (".css", ".js", ".svg"):
+        headers["Cache-Control"] = "no-cache, must-revalidate"
+    return web.FileResponse(fpath, headers=headers)
 
 
 @routes.get("/api/health")
@@ -816,6 +846,7 @@ async def init_app() -> web.Application:
     app = web.Application(middlewares=[request_timeout_middleware, session_middleware])
     app["db"] = db
     app["vapid"] = vapid
+    app["asset_version"] = compute_asset_version()
     app.add_routes(routes)
 
     async def on_startup(app_instance: web.Application) -> None:

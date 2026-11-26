@@ -25,11 +25,11 @@
       </div>
       <div class="top-actions">
         <button class="btn-icon" id="btn-locate" title="Detect nearest station (GPS)">
-          <svg class="ico"><use href="/static/icons.svg#ico-locate-fixed"></use></svg>
+          <svg class="ico" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#ico-locate-fixed"></use></svg>
           <span>Locate</span>
         </button>
         <button class="btn-icon" id="btn-poll-top" title="Force poll now" aria-label="Refresh">
-          <svg class="ico"><use href="/static/icons.svg#ico-refresh-cw"></use></svg>
+          <svg class="ico" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#ico-refresh-cw"></use></svg>
         </button>
       </div>
     </header>
@@ -44,7 +44,7 @@
               <span class="endpoint-name" id="board-from-name">Agincourt GO</span>
             </div>
             <button class="btn-swap" id="btn-swap-dir" title="Switch direction" aria-label="Switch direction">
-              <svg class="ico ico-swap"><use href="/static/icons.svg#ico-arrow-left-right"></use></svg>
+              <svg class="ico ico-swap" width="18" height="18" aria-hidden="true"><use href="/static/icons.svg#ico-arrow-left-right"></use></svg>
             </button>
             <div class="endpoint right">
               <span class="endpoint-label">TO</span>
@@ -60,10 +60,10 @@
         <div id="advisories-box" class="advisories hidden">
           <button class="advisories-toggle" id="btn-toggle-advisories">
             <span class="inline-ico">
-              <svg class="ico"><use href="/static/icons.svg#ico-triangle-alert"></use></svg>
+              <svg class="ico" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#ico-triangle-alert"></use></svg>
               <span>Station Advisories (<span id="advisories-count">0</span>)</span>
             </span>
-            <svg class="ico" id="advisories-chevron"><use href="/static/icons.svg#ico-chevron-down"></use></svg>
+            <svg class="ico" id="advisories-chevron" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#ico-chevron-down"></use></svg>
           </button>
           <ul id="advisories-list" class="advisories-list hidden"></ul>
         </div>
@@ -77,7 +77,7 @@
       <section id="tab-alerts" class="tab-panel">
         <div class="profile-strip">
           <span class="inline-ico">
-            <svg class="ico"><use href="/static/icons.svg#ico-user-round"></use></svg>
+            <svg class="ico" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#ico-user-round"></use></svg>
             <span>Profile: <b id="alerts-profile-name">Commuter</b></span>
           </span>
           <span class="pill muted" id="alerts-profile-id">cookie session</span>
@@ -110,7 +110,7 @@
           <div class="card-header-row">
             <h2>Time-Window &amp; Direction Rules</h2>
             <button class="btn-small" id="btn-add-rule">
-              <svg class="ico sm"><use href="/static/icons.svg#ico-plus"></use></svg>
+              <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-plus"></use></svg>
               <span>Add Rule</span>
             </button>
           </div>
@@ -225,7 +225,7 @@
           <div class="btn-row">
             <button class="btn-primary" id="btn-save-channels">Save Channels</button>
             <button class="btn-secondary" id="btn-test-push">
-              <svg class="ico sm"><use href="/static/icons.svg#ico-send"></use></svg>
+              <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-send"></use></svg>
               <span>Send Test</span>
             </button>
           </div>
@@ -250,7 +250,7 @@
         <div class="card-header-row" style="margin-bottom:10px;">
           <h2 style="margin:0; font-size:17px;">Analytics &amp; Predictor</h2>
           <button type="button" class="btn-small secondary" id="btn-open-glossary">
-            <svg class="ico sm"><use href="/static/icons.svg#ico-book-open"></use></svg>
+            <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-book-open"></use></svg>
             <span>Metrics Guide</span>
           </button>
         </div>
@@ -260,11 +260,11 @@
         <div class="card" id="predictor-card">
           <div class="card-header-row">
             <h2 class="inline-ico">
-              <svg class="ico"><use href="/static/icons.svg#ico-sparkles"></use></svg>
+              <svg class="ico" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#ico-sparkles"></use></svg>
               <span>Union Platform Predictor</span>
             </h2>
             <button type="button" class="tip-btn" data-tip="confidence" aria-label="Explain confidence">
-              <svg class="ico sm"><use href="/static/icons.svg#ico-circle-help"></use></svg>
+              <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-circle-help"></use></svg>
             </button>
           </div>
           <p class="hint">Pick a destination line and station, then choose a scheduled departure or enter a time to snap to the nearest valid train.</p>
@@ -317,11 +317,11 @@
             <h2>Recent Events Log</h2>
             <div class="btn-row">
               <a class="btn-small" href="/api/analytics/export?table=snapshots&format=csv">
-                <svg class="ico sm"><use href="/static/icons.svg#ico-download"></use></svg>
+                <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-download"></use></svg>
                 <span>Snapshots</span>
               </a>
               <a class="btn-small" href="/api/analytics/export?table=outcomes&format=csv">
-                <svg class="ico sm"><use href="/static/icons.svg#ico-download"></use></svg>
+                <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-download"></use></svg>
                 <span>Outcomes</span>
               </a>
             </div>
@@ -360,11 +360,11 @@
             <div class="subcard-title">Link Another Device (e.g. Safari &harr; Home Screen PWA)</div>
             <div class="btn-row" style="margin-bottom:8px;">
               <button type="button" class="btn-small" id="btn-gen-link-code">
-                <svg class="ico sm"><use href="/static/icons.svg#ico-link-2"></use></svg>
+                <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-link-2"></use></svg>
                 <span>Generate Link Code</span>
               </button>
               <button type="button" class="btn-small secondary" id="btn-reset-profile">
-                <svg class="ico sm"><use href="/static/icons.svg#ico-rotate-ccw"></use></svg>
+                <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-rotate-ccw"></use></svg>
                 <span>New Fresh Profile</span>
               </button>
             </div>
@@ -380,7 +380,7 @@
           <h2>Backend Poller &amp; Database</h2>
           <div id="system-stats" class="stats-list"></div>
           <button class="btn-primary" id="btn-poll-sys">
-            <svg class="ico sm"><use href="/static/icons.svg#ico-refresh-cw"></use></svg>
+            <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-refresh-cw"></use></svg>
             <span>Poll GOTracker Now</span>
           </button>
         </div>
@@ -395,19 +395,19 @@
 
     <nav class="bottom-nav">
       <button class="nav-btn active" data-tab="board">
-        <svg class="ico nav-svg"><use href="/static/icons.svg#ico-train-front"></use></svg>
+        <svg class="ico nav-svg" width="20" height="20" aria-hidden="true"><use href="/static/icons.svg#ico-train-front"></use></svg>
         <span>Board</span>
       </button>
       <button class="nav-btn" data-tab="alerts">
-        <svg class="ico nav-svg"><use href="/static/icons.svg#ico-bell"></use></svg>
+        <svg class="ico nav-svg" width="20" height="20" aria-hidden="true"><use href="/static/icons.svg#ico-bell"></use></svg>
         <span>Alerts</span>
       </button>
       <button class="nav-btn" data-tab="analytics">
-        <svg class="ico nav-svg"><use href="/static/icons.svg#ico-chart-column"></use></svg>
+        <svg class="ico nav-svg" width="20" height="20" aria-hidden="true"><use href="/static/icons.svg#ico-chart-column"></use></svg>
         <span>Analytics</span>
       </button>
       <button class="nav-btn" data-tab="system">
-        <svg class="ico nav-svg"><use href="/static/icons.svg#ico-sliders-horizontal"></use></svg>
+        <svg class="ico nav-svg" width="20" height="20" aria-hidden="true"><use href="/static/icons.svg#ico-sliders-horizontal"></use></svg>
         <span>System</span>
       </button>
     </nav>
@@ -425,7 +425,7 @@
       <div class="modal-head">
         <h3 id="tip-modal-title">Metric</h3>
         <button type="button" class="btn-icon" id="tip-modal-close" aria-label="Close">
-          <svg class="ico sm"><use href="/static/icons.svg#ico-x"></use></svg>
+          <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-x"></use></svg>
         </button>
       </div>
       <p id="tip-modal-body" class="modal-body"></p>
@@ -437,11 +437,11 @@
     <div class="modal-sheet modal-tall">
       <div class="modal-head">
         <h3 class="inline-ico">
-          <svg class="ico sm"><use href="/static/icons.svg#ico-book-open"></use></svg>
+          <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-book-open"></use></svg>
           <span>Analytics Metrics Guide</span>
         </h3>
         <button type="button" class="btn-icon" id="glossary-close" aria-label="Close">
-          <svg class="ico sm"><use href="/static/icons.svg#ico-x"></use></svg>
+          <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-x"></use></svg>
         </button>
       </div>
       <div id="glossary-content" class="glossary-content"></div>
