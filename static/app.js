@@ -21,6 +21,21 @@
       title: "Snapshots Logged",
       body: "Stored snapshot state intervals. Unchanged consecutive polls are automatically merged into a single [captured_at, last_seen_at] interval with a sample count to save disk space without losing any timeline resolution.",
     },
+    delay_threshold: {
+      group: "Alert Triggers",
+      title: "Delay (min)",
+      body: "Minimum lateness in minutes before a Delay Started alert fires. Set to 0 to disable delay alerts.",
+    },
+    realert_step: {
+      group: "Alert Triggers",
+      title: "Re-alert (min)",
+      body: "Once a train is already delayed, how many additional minutes late it must get before sending another Delay Increased alert.",
+    },
+    lead_window: {
+      group: "Alert Triggers",
+      title: "Window (min)",
+      body: "How many minutes ahead of scheduled departure GOTracker++ watches trips and sends alerts (plus up to 15 min after scheduled departure).",
+    },
     outcomes: {
       group: "Overview KPIs",
       title: "Ground-Truth Outcomes",

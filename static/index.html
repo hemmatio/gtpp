@@ -186,15 +186,30 @@
           </div>
           <div class="grid-3">
             <div class="field">
-              <label for="pref-delay-min">Delay (min)</label>
+              <label for="pref-delay-min">
+                <span>Delay (m)</span>
+                <button type="button" class="tip-btn" data-tip="delay_threshold" aria-label="Explain Delay threshold">
+                  <svg class="ico sm" width="13" height="13" aria-hidden="true"><use href="/static/icons.svg#ico-circle-help"></use></svg>
+                </button>
+              </label>
               <input type="number" id="pref-delay-min" min="0" max="60" />
             </div>
             <div class="field">
-              <label for="pref-delay-step">Re-alert (min)</label>
+              <label for="pref-delay-step">
+                <span>Re-alert (m)</span>
+                <button type="button" class="tip-btn" data-tip="realert_step" aria-label="Explain Re-alert step">
+                  <svg class="ico sm" width="13" height="13" aria-hidden="true"><use href="/static/icons.svg#ico-circle-help"></use></svg>
+                </button>
+              </label>
               <input type="number" id="pref-delay-step" min="1" max="30" />
             </div>
             <div class="field">
-              <label for="pref-lead-min">Window (min)</label>
+              <label for="pref-lead-min">
+                <span>Window (m)</span>
+                <button type="button" class="tip-btn" data-tip="lead_window" aria-label="Explain Lead window">
+                  <svg class="ico sm" width="13" height="13" aria-hidden="true"><use href="/static/icons.svg#ico-circle-help"></use></svg>
+                </button>
+              </label>
               <input type="number" id="pref-lead-min" min="15" max="240" />
             </div>
           </div>

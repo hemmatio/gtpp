@@ -560,6 +560,12 @@ html, body {
   justify-content: space-between;
   margin-bottom: 0;
 }
+.grid-3 > .field label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
 
 /* Buttons: crisp single-line pills */
 .btn-primary, .btn-secondary, .btn-small, .btn-icon {
