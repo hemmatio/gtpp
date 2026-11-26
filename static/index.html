@@ -86,7 +86,7 @@
           <span class="pill muted" id="alerts-profile-id">cookie session</span>
         </div>
 
-        <div class="card">
+        <div class="card" id="card-route">
           <h2>Commute Route</h2>
           <div class="grid-2">
             <div class="field">
@@ -109,7 +109,7 @@
           <button class="btn-primary" id="btn-save-route">Save Route</button>
         </div>
 
-        <div class="card">
+        <div class="card" id="card-rules">
           <div class="card-header-row">
             <h2>Time-Window &amp; Direction Rules</h2>
             <button class="btn-small" id="btn-add-rule">
@@ -190,7 +190,7 @@
           <button class="btn-primary" id="btn-save-prefs">Save Triggers</button>
         </div>
 
-        <div class="card">
+        <div class="card" id="card-notifications">
           <h2>Notifications</h2>
           <p class="hint" id="webpush-status-msg">Checking browser support...</p>
           <div class="btn-row">
@@ -474,11 +474,16 @@
     </div>
   </div>
 
-  <!-- Interactive Onboarding Tutorial Modal -->
-  <div id="tutorial-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
-    <div class="modal-sheet modal-tall tutorial-sheet">
+  <!-- Interactive Spotlight Coachmark Tour -->
+  <div id="tour-overlay" class="tour-overlay hidden" role="dialog" aria-modal="true">
+    <div id="tour-mask-top" class="tour-mask"></div>
+    <div id="tour-mask-bottom" class="tour-mask"></div>
+    <div id="tour-mask-left" class="tour-mask"></div>
+    <div id="tour-mask-right" class="tour-mask"></div>
+    <div id="tour-ring" class="tour-ring"></div>
+    <div id="tour-card" class="tour-card">
       <div class="modal-head">
-        <span class="pill" id="tut-step-label">Step 1 of 5</span>
+        <span class="pill" id="tut-step-label">Step 1 of 6</span>
         <button type="button" class="btn-icon" id="tut-close" aria-label="Close tutorial">
           <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-x"></use></svg>
         </button>

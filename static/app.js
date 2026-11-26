@@ -938,103 +938,106 @@
     });
   }
 
-  // ---- Interactive First-Visit Onboarding Tutorial ----
+  // ---- Interactive Spotlight Coachmark Tour ----
   const TUTORIAL_STORAGE_KEY = "gtpp_tutorial_seen_v1";
 
   function setupTutorial() {
     let stepIdx = 0;
+    let isOpen = false;
+    let rafPending = false;
 
     function buildSteps() {
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || "") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
       const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
 
-      let step4Html = "";
+      let pushHtml = "";
       if (isStandalone) {
-        step4Html = `
+        pushHtml = `
           <div class="tut-callout ok">
             ${svgIcon("circle-check", "sm ico-ok")}
-            <span><b>Already Installed!</b> You are running GOTracker++ from your Home Screen. Just enable notifications in <b>Alerts &rarr; Notifications</b>.</span>
-          </div>
-          <ul class="tut-list">
-            <li><span class="tut-num">1</span><span>Go to the <b>Alerts</b> tab at the bottom.</span></li>
-            <li><span class="tut-num">2</span><span>Under <b>Notifications</b>, tap <b>Enable Web Push</b> and allow notifications when prompted.</span></li>
-            <li><span class="tut-num">3</span><span>Tap <b>Send Test</b> to verify an alert lands on your lock screen.</span></li>
-          </ul>`;
+            <span><b>Already Installed!</b> Tap <b>Enable Web Push</b> right above, then tap <b>Send Test</b>.</span>
+          </div>`;
       } else if (isIOS) {
-        step4Html = `
+        pushHtml = `
           <div class="tut-callout">
             ${svgIcon("info", "sm ico-info")}
-            <span>Apple requires web apps to be added to your Home Screen before iOS can deliver Web Push notifications.</span>
-          </div>
-          <ul class="tut-list">
-            <li><span class="tut-num">1</span><span>Open <code>gtpp.omidhemmati.com</code> in <b>Safari</b> (not an in-app browser).</span></li>
-            <li><span class="tut-num">2</span><span>Tap the <b>Share</b> button ${svgIcon("share", "sm")} at the bottom of Safari.</span></li>
-            <li><span class="tut-num">3</span><span>Scroll down and tap <b>Add to Home Screen</b>, then tap <b>Add</b>.</span></li>
-            <li><span class="tut-num">4</span><span>Close Safari, launch the new <b>GOTracker++</b> icon, then tap <b>Alerts &rarr; Enable Web Push</b>.</span></li>
-          </ul>`;
+            <span>On iPhone, open this URL in <b>Safari</b> &rarr; tap <b>Share</b> ${svgIcon("share", "sm")} &rarr; <b>Add to Home Screen</b>, then open the installed icon and tap <b>Enable Web Push</b> above.</span>
+          </div>`;
       } else {
-        step4Html = `
+        pushHtml = `
           <div class="tut-callout">
             ${svgIcon("info", "sm ico-info")}
-            <span>Using iPhone too? Open <code>gtpp.omidhemmati.com</code> in iOS Safari &rarr; <b>Share &rarr; Add to Home Screen</b> to unlock iPhone lock-screen push alerts.</span>
-          </div>
-          <ul class="tut-list">
-            <li><span class="tut-num">1</span><span>On desktop or Android, open the <b>Alerts</b> tab and tap <b>Enable Web Push</b> under <b>Notifications</b>.</span></li>
-            <li><span class="tut-num">2</span><span>Tap <b>Send Test</b> to confirm notifications work on this device.</span></li>
-            <li><span class="tut-num">3</span><span>To share your route and rules between phone and laptop, use <b>System &rarr; Generate Link Code</b>.</span></li>
-          </ul>`;
+            <span>Tap <b>Enable Web Push</b> above (or add to Home Screen from iOS Safari for iPhone lock-screen alerts), then tap <b>Send Test</b>.</span>
+          </div>`;
       }
 
       return [
         {
+          tab: "board",
+          selector: ".route-card",
           icon: "train-front",
-          title: "Welcome to GOTracker++",
-          lead: "Live GO Transit board with automatic background updates",
+          title: "Live Route & Direction",
+          lead: "Try swapping direction or detecting your station",
           html: `
             <ul class="tut-list">
-              <li><span class="tut-num">1</span><span><b>Always Live:</b> The server polls GOTracker every 20-45s and streams changes straight to the <b>Board</b> tab.</span></li>
-              <li><span class="tut-num">2</span><span><b>Flip or Locate:</b> Tap ${svgIcon("arrow-left-right", "sm")} to swap direction, or tap <b>Locate</b> to auto-detect your nearest station via GPS.</span></li>
-              <li><span class="tut-num">3</span><span><b>Live Stop Timeline:</b> Tap any train card to expand every stop, scheduled vs. actual time, and track number.</span></li>
-              <li><span class="tut-num">4</span><span><b>Early Platform Hints:</b> Dashed ${svgIcon("sparkles", "sm")} <b>Est.</b> badges predict Union platforms with a confidence % before official boards post them.</span></li>
+              <li><span class="tut-num">1</span><span>Tap ${svgIcon("arrow-left-right", "sm")} inside this highlighted card anytime to switch directions.</span></li>
+              <li><span class="tut-num">2</span><span>Tap <b>Locate</b> in the top bar to auto-pick the direction closest to your phone GPS.</span></li>
             </ul>`,
         },
         {
+          tab: "board",
+          selector: "#departures-list",
+          icon: "sparkles",
+          title: "Departures & Platform Estimates",
+          lead: "Auto-updated every 20-45s in the background",
+          html: `
+            <ul class="tut-list">
+              <li><span class="tut-num">1</span><span>Dashed <b>Est.</b> badges predict Union boarding platforms + confidence % before official tracks post.</span></li>
+              <li><span class="tut-num">2</span><span>Tap any train card to expand live stop-by-stop actuals, scheduled tracks, and locomotive IDs.</span></li>
+            </ul>`,
+        },
+        {
+          tab: "alerts",
+          selector: "#card-route",
           icon: "map-pin",
-          title: "Set Your Commute Route",
-          lead: "Your profile is saved automatically via browser cookie",
+          title: "Choose Your Commute Route",
+          lead: "Saved privately to your browser cookie profile",
           html: `
             <ul class="tut-list">
-              <li><span class="tut-num">1</span><span>Open the <b>Alerts</b> tab using the bottom navigation bar.</span></li>
-              <li><span class="tut-num">2</span><span>Under <b>Commute Route</b>, select your <b>Home Line &amp; Station</b> and <b>Destination Line &amp; Station</b> (e.g. Agincourt &harr; Union).</span></li>
-              <li><span class="tut-num">3</span><span>Tap <b>Save Route</b>. Your settings are private to this browser and syncable to another device in <b>System &rarr; Link Another Device</b>.</span></li>
+              <li><span class="tut-num">1</span><span>Pick your <b>Home Line &amp; Station</b> and <b>Destination Line &amp; Station</b> above, then tap <b>Save Route</b>.</span></li>
+              <li><span class="tut-num">2</span><span>Need the same profile on Safari + Home Screen or Laptop? Pair them in <b>System &rarr; Link Another Device</b>.</span></li>
             </ul>`,
         },
         {
+          tab: "alerts",
+          selector: "#card-rules",
           icon: "bell-ring",
           title: "Set Your Alert Schedule",
-          lead: "Only get notified during the hours and directions you ride",
+          lead: "Control exact hours and directions for alerts",
           html: `
             <ul class="tut-list">
-              <li><span class="tut-num">1</span><span>In <b>Alerts &rarr; Time-Window &amp; Direction Rules</b>, edit or tap <b>+ Add Rule</b>.</span></li>
-              <li><span class="tut-num">2</span><span>Pick a direction (e.g. <b>Home to Dest</b> in the morning, <b>Dest to Home</b> in the evening), days of week, and start/end hours.</span></li>
-              <li><span class="tut-num">3</span><span>Under <b>Alert Triggers</b>, choose what wakes your phone: Platform Announced, Platform Changed, Boarding (Proceed), Delays, Short Trains, or Cancellations.</span></li>
+              <li><span class="tut-num">1</span><span>Edit existing weekday rules or tap <b>+ Add Rule</b> to choose active days, start/end hours, and direction.</span></li>
+              <li><span class="tut-num">2</span><span>Alerts only fire for matching windows (delays, platform announcements/changes, boarding, short trains).</span></li>
             </ul>`,
         },
         {
+          tab: "alerts",
+          selector: "#card-notifications",
           icon: "smartphone",
           title: "Add to Home Screen & Push",
-          lead: isStandalone ? "Installed PWA detected" : (isIOS ? "Required for iPhone lock-screen alerts" : "Installable PWA + instant Web Push"),
-          html: step4Html,
+          lead: isStandalone ? "Installed PWA ready for Web Push" : (isIOS ? "iPhone Web Push setup" : "Enable browser push alerts"),
+          html: pushHtml,
         },
         {
-          icon: "sparkles",
+          tab: "analytics",
+          selector: "#predictor-card",
+          icon: "chart-column",
           title: "Platform Predictor & Analytics",
-          lead: "Track delays, misleading estimates, and likely tracks",
+          lead: "Forecast tracks and audit misleading estimates",
           html: `
             <ul class="tut-list">
-              <li><span class="tut-num">1</span><span>Open the <b>Analytics</b> tab to use the <b>Union Platform Predictor</b> - pick a train or enter any time to snap to the nearest valid departure.</span></li>
-              <li><span class="tut-num">2</span><span>Inspect <b>Misleading Estimations</b> (how often GO says On Time before late delays) and historical platform consistency.</span></li>
-              <li><span class="tut-num">3</span><span>Tap any ${svgIcon("circle-help", "sm")} icon or <b>Metrics Guide</b> anytime for plain-English definitions.</span></li>
+              <li><span class="tut-num">1</span><span>Pick a Union departure (or snap any time) above to predict its boarding platform from historical logs.</span></li>
+              <li><span class="tut-num">2</span><span>Scroll down for <b>Misleading Estimations</b>, and tap any ${svgIcon("circle-help", "sm")} icon or <b>Metrics Guide</b> for explanations.</span></li>
             </ul>`,
         },
       ];
@@ -1046,12 +1049,83 @@
       } catch (_) {}
     }
 
-    function renderStep() {
+    function positionSpotlight() {
+      if (!isOpen) return;
+      const steps = buildSteps();
+      const st = steps[stepIdx];
+      const target = st ? document.querySelector(st.selector) : null;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const card = $("tour-card");
+      const ring = $("tour-ring");
+      const mTop = $("tour-mask-top");
+      const mBot = $("tour-mask-bottom");
+      const mLeft = $("tour-mask-left");
+      const mRight = $("tour-mask-right");
+
+      if (!target) {
+        mTop.style.cssText = "top:0;left:0;width:100vw;height:100vh;";
+        mBot.style.cssText = "width:0;height:0;";
+        mLeft.style.cssText = "width:0;height:0;";
+        mRight.style.cssText = "width:0;height:0;";
+        ring.classList.add("hidden");
+        card.style.top = `${Math.max(16, Math.round((vh - card.offsetHeight) / 2))}px`;
+        return;
+      }
+
+      ring.classList.remove("hidden");
+      const r = target.getBoundingClientRect();
+      const pad = 8;
+      const top = Math.max(0, Math.round(r.top - pad));
+      const left = Math.max(0, Math.round(r.left - pad));
+      const right = Math.min(vw, Math.round(r.right + pad));
+      // Cap cutout height so tall sections still leave room for the docked coachmark card
+      const maxBot = Math.min(vh - 12, Math.round(top + Math.max(140, vh * 0.46)));
+      const bottom = Math.max(top + 40, Math.min(vh, Math.round(r.bottom + pad), maxBot));
+      const w = Math.max(0, right - left);
+      const h = Math.max(0, bottom - top);
+
+      mTop.style.cssText = `top:0px;left:0px;width:${vw}px;height:${top}px;`;
+      mBot.style.cssText = `top:${bottom}px;left:0px;width:${vw}px;height:${Math.max(0, vh - bottom)}px;`;
+      mLeft.style.cssText = `top:${top}px;left:0px;width:${left}px;height:${h}px;`;
+      mRight.style.cssText = `top:${top}px;left:${right}px;width:${Math.max(0, vw - right)}px;height:${h}px;`;
+
+      ring.style.top = `${top}px`;
+      ring.style.left = `${left}px`;
+      ring.style.width = `${w}px`;
+      ring.style.height = `${h}px`;
+
+      const cardH = card.offsetHeight || 220;
+      let cardTop;
+      if (vh - bottom >= cardH + 14) {
+        cardTop = bottom + 12;
+      } else if (top >= cardH + 14) {
+        cardTop = top - cardH - 12;
+      } else {
+        cardTop = Math.max(12, vh - cardH - 12);
+      }
+      card.style.top = `${Math.round(cardTop)}px`;
+    }
+
+    function schedulePosition() {
+      if (!isOpen || rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(() => {
+        rafPending = false;
+        positionSpotlight();
+      });
+    }
+
+    function renderStep(shouldScroll = true) {
       const steps = buildSteps();
       const total = steps.length;
       if (stepIdx < 0) stepIdx = 0;
       if (stepIdx >= total) stepIdx = total - 1;
       const st = steps[stepIdx];
+
+      if (state.tab !== st.tab) {
+        switchTab(st.tab);
+      }
 
       $("tut-step-label").textContent = `Step ${stepIdx + 1} of ${total}`;
       $("tut-dots").innerHTML = steps
@@ -1065,7 +1139,7 @@
         .forEach((dot) => {
           dot.addEventListener("click", () => {
             stepIdx = Number(dot.dataset.tutIdx);
-            renderStep();
+            renderStep(true);
           });
         });
 
@@ -1086,30 +1160,41 @@
       $("tut-next").innerHTML = isLast
         ? `<span>Done</span>${svgIcon("check", "sm")}`
         : `<span>Next</span>${svgIcon("arrow-right", "sm")}`;
+
+      if (shouldScroll) {
+        const target = document.querySelector(st.selector);
+        if (target) {
+          const absTop = target.getBoundingClientRect().top + window.scrollY;
+          window.scrollTo({ top: Math.max(0, absTop - 74), behavior: "instant" });
+        }
+      }
+      requestAnimationFrame(() => positionSpotlight());
     }
 
     function openTutorial(startAt = 0) {
       stepIdx = startAt;
-      renderStep();
-      $("tutorial-modal").classList.remove("hidden");
+      isOpen = true;
+      $("tour-overlay").classList.remove("hidden");
+      renderStep(true);
     }
 
     function closeTutorial() {
+      isOpen = false;
       markSeen();
-      $("tutorial-modal").classList.add("hidden");
+      $("tour-overlay").classList.add("hidden");
     }
 
     $("tut-prev").addEventListener("click", () => {
       if (stepIdx > 0) {
         stepIdx -= 1;
-        renderStep();
+        renderStep(true);
       }
     });
     $("tut-next").addEventListener("click", () => {
       const total = buildSteps().length;
       if (stepIdx < total - 1) {
         stepIdx += 1;
-        renderStep();
+        renderStep(true);
       } else {
         closeTutorial();
       }
@@ -1119,23 +1204,26 @@
       switchTab("alerts");
     });
     $("tut-close").addEventListener("click", closeTutorial);
-    $("tutorial-modal").addEventListener("click", (e) => {
-      if (e.target === $("tutorial-modal")) closeTutorial();
-    });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !$("tutorial-modal").classList.contains("hidden")) {
+      if (e.key === "Escape" && isOpen) {
         closeTutorial();
       }
     });
+    window.addEventListener("resize", schedulePosition);
+    window.addEventListener("scroll", schedulePosition, { passive: true });
 
     $("btn-open-tutorial").addEventListener("click", () => openTutorial(0));
     $("btn-replay-tutorial").addEventListener("click", () => openTutorial(0));
 
-    try {
-      if (!localStorage.getItem(TUTORIAL_STORAGE_KEY)) {
-        openTutorial(0);
-      }
-    } catch (_) {}
+    return {
+      maybeAutoOpen() {
+        try {
+          if (!localStorage.getItem(TUTORIAL_STORAGE_KEY)) {
+            openTutorial(0);
+          }
+        } catch (_) {}
+      },
+    };
   }
 
   async function loadSystemTab() {
@@ -1253,7 +1341,7 @@
     }
 
     setupTooltips();
-    setupTutorial();
+    const tutorial = setupTutorial();
 
     document.querySelectorAll(".nav-btn").forEach((btn) => {
       btn.addEventListener("click", () => switchTab(btn.dataset.tab));
@@ -1459,6 +1547,7 @@
     state.me = me;
     renderSettings();
     await refreshLive();
+    tutorial.maybeAutoOpen();
     connectSSE();
     setInterval(() => {
       if (state.live && state.tab === "board") renderBoard();
