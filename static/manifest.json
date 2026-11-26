@@ -1,0 +1,24 @@
+{
+  "name": "GOTracker++",
+  "short_name": "GOTracker++",
+  "description": "Smart GO Transit departure board, custom background alerts, and delay analytics.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b110d",
+  "theme_color": "#1b5e20",
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

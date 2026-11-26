@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="GOTracker++" />
+  <meta name="theme-color" content="#1b5e20" />
+  <title>GOTracker++</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="top-bar">
+      <div class="brand">
+        <span class="brand-dot" id="sse-dot"></span>
+        <div>
+          <div class="brand-title">GOTracker++</div>
+          <div class="brand-sub" id="freshness-label">Connecting...</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="btn-icon" id="btn-locate" title="Detect nearest station (GPS)">
+          <svg class="ico"><use href="/static/icons.svg#ico-locate-fixed"></use></svg>
+          <span>Locate</span>
+        </button>
+        <button class="btn-icon" id="btn-poll-top" title="Force poll now" aria-label="Refresh">
+          <svg class="ico"><use href="/static/icons.svg#ico-refresh-cw"></use></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <!-- BOARD TAB -->
+      <section id="tab-board" class="tab-panel active">
+        <div class="route-card">
+          <div class="route-endpoints">
+            <div class="endpoint">
+              <span class="endpoint-label">FROM</span>
+              <span class="endpoint-name" id="board-from-name">Agincourt GO</span>
+            </div>
+            <button class="btn-swap" id="btn-swap-dir" title="Switch direction" aria-label="Switch direction">
+              <svg class="ico ico-swap"><use href="/static/icons.svg#ico-arrow-left-right"></use></svg>
+            </button>
+            <div class="endpoint right">
+              <span class="endpoint-label">TO</span>
+              <span class="endpoint-name" id="board-to-name">Union Station</span>
+            </div>
+          </div>
+          <div class="route-meta">
+            <span id="gps-badge" class="pill muted hidden"></span>
+            <span id="alert-armed-badge" class="pill">Checking rules...</span>
+          </div>
+        </div>
+
+        <div id="advisories-box" class="advisories hidden">
+          <button class="advisories-toggle" id="btn-toggle-advisories">
+            <span class="inline-ico">
+              <svg class="ico"><use href="/static/icons.svg#ico-triangle-alert"></use></svg>
+              <span>Station Advisories (<span id="advisories-count">0</span>)</span>
+            </span>
+            <svg class="ico" id="advisories-chevron"><use href="/static/icons.svg#ico-chevron-down"></use></svg>
+          </button>
+          <ul id="advisories-list" class="advisories-list hidden"></ul>
+        </div>
+
+        <div id="departures-list" class="departures-list">
+          <div class="empty-state">Loading live departures...</div>
+        </div>
+      </section>
+
+      <!-- ALERTS TAB -->
+      <section id="tab-alerts" class="tab-panel">
+        <div class="profile-strip">
+          <span class="inline-ico">
+            <svg class="ico"><use href="/static/icons.svg#ico-user-round"></use></svg>
+            <span>Profile: <b id="alerts-profile-name">Commuter</b></span>
+          </span>
+          <span class="pill muted" id="alerts-profile-id">cookie session</span>
+        </div>
+
+        <div class="card">
+          <h2>Commute Route</h2>
+          <div class="grid-2">
+            <div class="field">
+              <label for="sel-home-corr">Home Line</label>
+              <select id="sel-home-corr"></select>
+            </div>
+            <div class="field">
+              <label for="sel-home-stat">Home Station</label>
+              <select id="sel-home-stat"></select>
+            </div>
+            <div class="field">
+              <label for="sel-dest-corr">Dest Line</label>
+              <select id="sel-dest-corr"></select>
+            </div>
+            <div class="field">
+              <label for="sel-dest-stat">Dest Station</label>
+              <select id="sel-dest-stat"></select>
+            </div>
+          </div>
+          <button class="btn-primary" id="btn-save-route">Save Route</button>
+        </div>
+
+        <div class="card">
+          <div class="card-header-row">
+            <h2>Time-Window &amp; Direction Rules</h2>
+            <button class="btn-small" id="btn-add-rule">
+              <svg class="ico sm"><use href="/static/icons.svg#ico-plus"></use></svg>
+              <span>Add Rule</span>
+            </button>
+          </div>
+          <p class="hint">Notifications only fire when a rule (or Location Override) matches the current time or upcoming trip direction.</p>
+          <div id="rules-list" class="rules-list"></div>
+
+          <form id="rule-form" class="rule-form hidden">
+            <h3 id="rule-form-title">New Rule</h3>
+            <input type="hidden" id="rule-edit-id" />
+            <div class="field">
+              <label for="rule-name">Rule Name</label>
+              <input type="text" id="rule-name" placeholder="e.g. Morning Commute" required />
+            </div>
+            <div class="grid-3">
+              <div class="field">
+                <label for="rule-dir">Direction</label>
+                <select id="rule-dir">
+                  <option value="home_to_dest">Home to Dest</option>
+                  <option value="dest_to_home">Dest to Home</option>
+                  <option value="both">Both</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="rule-start">Start</label>
+                <input type="time" id="rule-start" value="06:30" required />
+              </div>
+              <div class="field">
+                <label for="rule-end">End</label>
+                <input type="time" id="rule-end" value="09:30" required />
+              </div>
+            </div>
+            <div class="field">
+              <label>Days</label>
+              <div class="days-picker" id="rule-days-picker">
+                <button type="button" data-day="0" class="day-btn active">M</button>
+                <button type="button" data-day="1" class="day-btn active">T</button>
+                <button type="button" data-day="2" class="day-btn active">W</button>
+                <button type="button" data-day="3" class="day-btn active">T</button>
+                <button type="button" data-day="4" class="day-btn active">F</button>
+                <button type="button" data-day="5" class="day-btn">S</button>
+                <button type="button" data-day="6" class="day-btn">S</button>
+              </div>
+            </div>
+            <div class="btn-row">
+              <button type="submit" class="btn-primary">Save Rule</button>
+              <button type="button" class="btn-secondary" id="btn-cancel-rule">Cancel</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Alert Triggers</h2>
+          <div class="toggles-grid">
+            <label class="toggle-item"><input type="checkbox" id="pref-plat-ann" /> Platform Announced</label>
+            <label class="toggle-item"><input type="checkbox" id="pref-plat-chg" /> Platform Changed</label>
+            <label class="toggle-item"><input type="checkbox" id="pref-proceed" /> Boarding ("Proceed")</label>
+            <label class="toggle-item"><input type="checkbox" id="pref-cancelled" /> Trip Cancelled</label>
+            <label class="toggle-item"><input type="checkbox" id="pref-short" /> Short Train (&lt; sched cars)</label>
+          </div>
+          <div class="grid-3">
+            <div class="field">
+              <label for="pref-delay-min">Delay Alert (min)</label>
+              <input type="number" id="pref-delay-min" min="0" max="60" />
+            </div>
+            <div class="field">
+              <label for="pref-delay-step">Re-alert Step (min)</label>
+              <input type="number" id="pref-delay-step" min="1" max="30" />
+            </div>
+            <div class="field">
+              <label for="pref-lead-min">Lead Window (min)</label>
+              <input type="number" id="pref-lead-min" min="15" max="240" />
+            </div>
+          </div>
+          <button class="btn-primary" id="btn-save-prefs">Save Triggers</button>
+        </div>
+
+        <div class="card">
+          <h2>Push Channels</h2>
+          <div class="subcard">
+            <div class="subcard-title">1. iOS Web Push (Home Screen PWA)</div>
+            <p class="hint" id="webpush-status-msg">Checking browser support...</p>
+            <div class="btn-row">
+              <button class="btn-small" id="btn-webpush-sub">Enable Web Push</button>
+              <button class="btn-small secondary hidden" id="btn-webpush-unsub">Unsubscribe</button>
+            </div>
+          </div>
+
+          <div class="subcard">
+            <div class="subcard-title">2. ntfy.sh (Instant iOS Push Backup)</div>
+            <p class="hint">Install the free <b>ntfy</b> iOS app and subscribe to this topic for immediate notifications.</p>
+            <div class="field">
+              <label for="chan-ntfy-topic">ntfy Topic</label>
+              <div class="input-with-btn">
+                <input type="text" id="chan-ntfy-topic" placeholder="e.g. gotracker-my-secret-topic" />
+                <button type="button" class="btn-small" id="btn-gen-ntfy">Generate</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="chan-ntfy-server">ntfy Server</label>
+              <input type="text" id="chan-ntfy-server" value="https://ntfy.sh" />
+            </div>
+          </div>
+
+          <div class="subcard">
+            <div class="subcard-title">3. Custom Webhook (Optional)</div>
+            <div class="field">
+              <label for="chan-webhook">Webhook URL (Discord / Home Assistant / Pushover)</label>
+              <input type="url" id="chan-webhook" placeholder="https://..." />
+            </div>
+          </div>
+
+          <div class="btn-row">
+            <button class="btn-primary" id="btn-save-channels">Save Channels</button>
+            <button class="btn-secondary" id="btn-test-push">
+              <svg class="ico sm"><use href="/static/icons.svg#ico-send"></use></svg>
+              <span>Send Test</span>
+            </button>
+          </div>
+          <div id="push-test-result" class="status-box hidden"></div>
+        </div>
+
+        <div class="card">
+          <h2>Background Location (iOS Shortcuts)</h2>
+          <p class="hint">iOS PWAs cannot run background GPS geofences directly. Use Apple <b>Shortcuts &rarr; Automation &rarr; Arrive/Leave</b> with <i>Get Contents of URL</i> to trigger your profile's private webhooks automatically.</p>
+          <div id="loc-override-status" class="pill muted">No active override</div>
+          <div class="btn-row" style="margin-top:8px;">
+            <button class="btn-small" data-zone="home" id="btn-loc-home">Simulate Home</button>
+            <button class="btn-small" data-zone="dest" id="btn-loc-dest">Simulate Dest/Union</button>
+            <button class="btn-small secondary" data-zone="clear" id="btn-loc-clear">Clear Override</button>
+          </div>
+          <div class="webhook-urls" id="shortcut-urls"></div>
+        </div>
+      </section>
+
+      <!-- ANALYTICS TAB -->
+      <section id="tab-analytics" class="tab-panel">
+        <div class="card-header-row" style="margin-bottom:10px;">
+          <h2 style="margin:0; font-size:17px;">Analytics &amp; Predictor</h2>
+          <button type="button" class="btn-small secondary" id="btn-open-glossary">
+            <svg class="ico sm"><use href="/static/icons.svg#ico-book-open"></use></svg>
+            <span>Metrics Guide</span>
+          </button>
+        </div>
+
+        <div class="kpi-grid" id="kpi-grid"></div>
+
+        <div class="card" id="predictor-card">
+          <div class="card-header-row">
+            <h2 class="inline-ico">
+              <svg class="ico"><use href="/static/icons.svg#ico-sparkles"></use></svg>
+              <span>Union Platform Predictor</span>
+            </h2>
+            <button type="button" class="tip-btn" data-tip="confidence" aria-label="Explain confidence">
+              <svg class="ico sm"><use href="/static/icons.svg#ico-circle-help"></use></svg>
+            </button>
+          </div>
+          <p class="hint">Pick a destination line and station, then choose a scheduled departure or enter a time to snap to the nearest valid train.</p>
+          <div class="grid-2">
+            <div class="field">
+              <label for="pred-corridor">GO Line</label>
+              <select id="pred-corridor"></select>
+            </div>
+            <div class="field">
+              <label for="pred-station">Destination Station</label>
+              <select id="pred-station"></select>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="pred-trip">Scheduled Train (Union Dep)</label>
+              <select id="pred-trip"></select>
+            </div>
+            <div class="field">
+              <label for="pred-time">Or Snap Nearest Time</label>
+              <div class="input-with-btn">
+                <input type="time" id="pred-time" />
+                <button type="button" class="btn-small" id="btn-pred-snap">Snap</button>
+              </div>
+            </div>
+          </div>
+          <div id="pred-result" class="pred-result-box">
+            <span class="hint">Select a line and station to predict its Union boarding platform.</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Misleading Estimations (Prediction Drift)</h2>
+          <p class="hint">Compares GOTracker's live prediction at T-30m, T-15m, T-10m, and T-5m against actual ground-truth departures. Tap any <b>?</b> for definitions.</p>
+          <div id="drift-table-wrap"></div>
+        </div>
+
+        <div class="card">
+          <h2>Platform Patterns</h2>
+          <div id="platform-table-wrap"></div>
+        </div>
+
+        <div class="card">
+          <h2>Worst Delays &amp; Misses</h2>
+          <div id="offenders-table-wrap"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header-row">
+            <h2>Recent Events Log</h2>
+            <div class="btn-row">
+              <a class="btn-small" href="/api/analytics/export?table=snapshots&format=csv">
+                <svg class="ico sm"><use href="/static/icons.svg#ico-download"></use></svg>
+                <span>Snapshots</span>
+              </a>
+              <a class="btn-small" href="/api/analytics/export?table=outcomes&format=csv">
+                <svg class="ico sm"><use href="/static/icons.svg#ico-download"></use></svg>
+                <span>Outcomes</span>
+              </a>
+            </div>
+          </div>
+          <div class="field">
+            <select id="events-filter">
+              <option value="">All Events</option>
+              <option value="platform_announced">Platform Announced</option>
+              <option value="platform_changed">Platform Changed</option>
+              <option value="boarding_proceed">Boarding / Proceed</option>
+              <option value="delay_started">Delay Started</option>
+              <option value="delay_increased">Delay Increased</option>
+              <option value="cancelled">Cancelled</option>
+              <option value="short_train">Short Train</option>
+              <option value="location_change">Location Change</option>
+            </select>
+          </div>
+          <div id="events-list" class="events-list"></div>
+        </div>
+      </section>
+
+      <!-- SYSTEM TAB -->
+      <section id="tab-system" class="tab-panel">
+        <div class="card">
+          <h2>Profile &amp; Device Sync</h2>
+          <p class="hint">Settings, rules, and push subscriptions are isolated per cookie profile (ready for Email/OAuth upgrade).</p>
+          <div class="stats-list" id="profile-stats"></div>
+          <div class="field">
+            <label for="profile-name-input">Profile Name</label>
+            <div class="input-with-btn">
+              <input type="text" id="profile-name-input" maxlength="48" placeholder="Commuter" />
+              <button type="button" class="btn-small" id="btn-save-profile">Save</button>
+            </div>
+          </div>
+          <div class="subcard">
+            <div class="subcard-title">Link Another Device (e.g. Safari &harr; Home Screen PWA)</div>
+            <div class="btn-row" style="margin-bottom:8px;">
+              <button type="button" class="btn-small" id="btn-gen-link-code">
+                <svg class="ico sm"><use href="/static/icons.svg#ico-link-2"></use></svg>
+                <span>Generate Link Code</span>
+              </button>
+              <button type="button" class="btn-small secondary" id="btn-reset-profile">
+                <svg class="ico sm"><use href="/static/icons.svg#ico-rotate-ccw"></use></svg>
+                <span>New Fresh Profile</span>
+              </button>
+            </div>
+            <div id="link-code-display" class="status-box hidden"></div>
+            <div class="input-with-btn" style="margin-top:8px;">
+              <input type="text" id="claim-code-input" maxlength="10" placeholder="Enter 6-char code" style="text-transform:uppercase;" />
+              <button type="button" class="btn-small" id="btn-claim-link-code">Link Device</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Backend Poller &amp; Database</h2>
+          <div id="system-stats" class="stats-list"></div>
+          <button class="btn-primary" id="btn-poll-sys">
+            <svg class="ico sm"><use href="/static/icons.svg#ico-refresh-cw"></use></svg>
+            <span>Poll GOTracker Now</span>
+          </button>
+        </div>
+
+        <div class="card">
+          <h2>iOS Readiness Checklist</h2>
+          <ul id="ios-checklist" class="checklist"></ul>
+          <p class="hint">Open <code>https://gtpp.omidhemmati.com/</code> in Safari &rarr; tap <b>Share &rarr; Add to Home Screen</b>, then subscribe to Web Push from the installed app.</p>
+        </div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav">
+      <button class="nav-btn active" data-tab="board">
+        <svg class="ico nav-svg"><use href="/static/icons.svg#ico-train-front"></use></svg>
+        <span>Board</span>
+      </button>
+      <button class="nav-btn" data-tab="alerts">
+        <svg class="ico nav-svg"><use href="/static/icons.svg#ico-bell"></use></svg>
+        <span>Alerts</span>
+      </button>
+      <button class="nav-btn" data-tab="analytics">
+        <svg class="ico nav-svg"><use href="/static/icons.svg#ico-chart-column"></use></svg>
+        <span>Analytics</span>
+      </button>
+      <button class="nav-btn" data-tab="system">
+        <svg class="ico nav-svg"><use href="/static/icons.svg#ico-sliders-horizontal"></use></svg>
+        <span>System</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Desktop Floating Tooltip -->
+  <div id="tooltip-float" class="tooltip-float hidden" role="tooltip">
+    <div id="tooltip-float-title" class="tooltip-title"></div>
+    <div id="tooltip-float-body" class="tooltip-body"></div>
+  </div>
+
+  <!-- Tap/Mobile Metric Definition Popover Modal -->
+  <div id="tip-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="modal-head">
+        <h3 id="tip-modal-title">Metric</h3>
+        <button type="button" class="btn-icon" id="tip-modal-close" aria-label="Close">
+          <svg class="ico sm"><use href="/static/icons.svg#ico-x"></use></svg>
+        </button>
+      </div>
+      <p id="tip-modal-body" class="modal-body"></p>
+    </div>
+  </div>
+
+  <!-- Full Metrics Guide Modal -->
+  <div id="glossary-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-sheet modal-tall">
+      <div class="modal-head">
+        <h3 class="inline-ico">
+          <svg class="ico sm"><use href="/static/icons.svg#ico-book-open"></use></svg>
+          <span>Analytics Metrics Guide</span>
+        </h3>
+        <button type="button" class="btn-icon" id="glossary-close" aria-label="Close">
+          <svg class="ico sm"><use href="/static/icons.svg#ico-x"></use></svg>
+        </button>
+      </div>
+      <div id="glossary-content" class="glossary-content"></div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
