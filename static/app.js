@@ -234,56 +234,98 @@
       return;
     }
 
-    listEl.innerHTML = deps
-      .map((d) => {
-        const predMs = new Date(d.predicted_time || d.scheduled_time).getTime();
-        const minsUntil = Math.round((predMs - nowMs) / 60000);
-        const isPast = minsUntil < -3;
-        const delayMin = Math.round((d.delay_sec || 0) / 60);
-        const isDelayed = delayMin >= 3;
+    const enrichDep = (d) => {
+      const predMs = new Date(d.predicted_time || d.scheduled_time).getTime();
+      const minsUntil = Math.round((predMs - nowMs) / 60000);
+      const isPast = minsUntil < -3;
+      const delayMin = Math.round((d.delay_sec || 0) / 60);
+      const isDelayed = delayMin >= 3;
 
-        let countdownTxt = "";
-        if (minsUntil > 0 && minsUntil <= 180) countdownTxt = `in ${minsUntil}m`;
-        else if (minsUntil === 0) countdownTxt = "NOW";
-        else if (minsUntil < 0) countdownTxt = `${Math.abs(minsUntil)}m ago`;
+      let countdownTxt = "";
+      if (minsUntil > 0 && minsUntil <= 180) countdownTxt = `in ${minsUntil}m`;
+      else if (minsUntil === 0) countdownTxt = "NOW";
+      else if (minsUntil < 0) countdownTxt = `${Math.abs(minsUntil)}m ago`;
 
-        let platHtml = `<div class="plat-badge">Plat -</div>`;
-        const pred = d.predicted_platform;
-        if (d.platform && d.platform !== "-") {
-          const proceedCls = (d.info_status || "").toLowerCase().includes("proceed") ? " proceed" : "";
-          platHtml = `<div class="plat-badge assigned${proceedCls}">Plat ${escapeHtml(d.platform)}</div>`;
-        } else if (pred && pred.platform) {
-          platHtml = `
-            <div class="plat-badge predicted" title="${escapeHtml(pred.source_label || "Predicted platform")}">
-              <span class="plat-est-main">${svgIcon("sparkles", "sm")}<span>Est. ${escapeHtml(pred.platform)}</span></span>
-              <span class="plat-est-sub">${pred.confidence_pct}% conf</span>
-            </div>`;
-        } else if (d.sch_track && d.sch_track !== "-") {
-          platHtml = `<div class="plat-badge hint">Sched ${escapeHtml(d.sch_track)}</div>`;
-        }
+      let platHtml = `<div class="plat-badge">Plat -</div>`;
+      const pred = d.predicted_platform;
+      if (d.platform && d.platform !== "-") {
+        const proceedCls = (d.info_status || "").toLowerCase().includes("proceed") ? " proceed" : "";
+        platHtml = `<div class="plat-badge assigned${proceedCls}">Plat ${escapeHtml(d.platform)}</div>`;
+      } else if (pred && pred.platform) {
+        platHtml = `
+          <div class="plat-badge predicted" title="${escapeHtml(pred.source_label || "Predicted platform")}">
+            <span class="plat-est-main">${svgIcon("sparkles", "sm")}<span>Est. ${escapeHtml(pred.platform)}</span></span>
+            <span class="plat-est-sub">${pred.confidence_pct}% conf</span>
+          </div>`;
+      } else if (d.sch_track && d.sch_track !== "-") {
+        platHtml = `<div class="plat-badge hint">Sched ${escapeHtml(d.sch_track)}</div>`;
+      }
 
-        let statusPill = `<span class="pill">On Time</span>`;
-        if (d.is_cancelled) {
-          statusPill = `<span class="pill danger">CANCELLED</span>`;
-        } else if (isDelayed) {
-          statusPill = `<span class="pill warn">+${delayMin}m Late</span>`;
-        } else if ((d.info_status || "").toLowerCase().includes("proceed")) {
-          statusPill = `<span class="pill">Proceed</span>`;
-        }
+      let statusPill = `<span class="pill">On Time</span>`;
+      if (d.is_cancelled) {
+        statusPill = `<span class="pill danger">CANCELLED</span>`;
+      } else if (isDelayed) {
+        statusPill = `<span class="pill warn">+${delayMin}m Late</span>`;
+      } else if ((d.info_status || "").toLowerCase().includes("proceed")) {
+        statusPill = `<span class="pill">Proceed</span>`;
+      }
 
-        const coachBadge =
-          d.coach_count != null
-            ? d.scheduled_coach_count && d.coach_count < d.scheduled_coach_count
-              ? `<span class="pill warn">${d.coach_count}/${d.scheduled_coach_count} cars</span>`
-              : `<span class="pill muted">${d.coach_count} cars</span>`
-            : "";
+      const coachBadge =
+        d.coach_count != null
+          ? d.scheduled_coach_count && d.coach_count < d.scheduled_coach_count
+            ? `<span class="pill warn">${d.coach_count}/${d.scheduled_coach_count} cars</span>`
+            : `<span class="pill muted">${d.coach_count} cars</span>`
+          : "";
 
-        const expressBadge = d.is_express ? `<span class="pill info">Express</span>` : "";
-        const isExpanded = state.expandedTrip === d.trip_number;
-        const detailHtml = isExpanded ? renderTripDetail(d) : "";
+      const expressBadge = d.is_express ? `<span class="pill info">Express</span>` : "";
+      const isExpanded = state.expandedTrip === d.trip_number;
+      const detailHtml = isExpanded ? renderTripDetail(d) : "";
 
-        return `
-          <div class="dep-card ${isPast ? "past" : ""}" data-trip="${escapeHtml(d.trip_number)}">
+      return {
+        d,
+        isPast,
+        isDelayed,
+        countdownTxt,
+        platHtml,
+        statusPill,
+        coachBadge,
+        expressBadge,
+        detailHtml,
+      };
+    };
+
+    const enriched = deps.map(enrichDep);
+    const firstUpcomingIdx = enriched.findIndex((item) => !item.isPast);
+    const heroIdx = firstUpcomingIdx >= 0 ? firstUpcomingIdx : 0;
+    const hero = enriched[heroIdx];
+    const rest = enriched.filter((_, idx) => idx !== heroIdx);
+
+    const heroHtml = `
+      <div class="hero-dep ${hero.isPast ? "past" : ""}" data-trip="${escapeHtml(hero.d.trip_number)}">
+        <div class="hero-top">
+          <div>
+            <div class="hero-kicker">Next train</div>
+            <div class="hero-countdown">${hero.countdownTxt || fmtTime(hero.d.predicted_time || hero.d.scheduled_time)}</div>
+          </div>
+          <div class="dep-right">${hero.platHtml}</div>
+        </div>
+        <div class="hero-sub">
+          <span class="hero-time ${hero.isDelayed ? "struck" : ""}">${fmtTime(hero.d.scheduled_time)}</span>
+          ${hero.isDelayed ? `<span class="hero-pred">${fmtTime(hero.d.predicted_time)}</span>` : ""}
+          <span>Train #${escapeHtml(hero.d.trip_number)}</span>
+          ${hero.statusPill}
+          ${hero.coachBadge}
+          ${hero.expressBadge}
+          ${hero.d.eligible_for_alerts ? `<span class="pill muted">${svgIcon("bell", "sm")}</span>` : ""}
+        </div>
+        ${hero.detailHtml}
+      </div>
+    `;
+
+    const restRowsHtml = rest
+      .map(
+        ({ d, isPast, isDelayed, countdownTxt, platHtml, statusPill, coachBadge, expressBadge, detailHtml }) => `
+          <div class="dep-row ${isPast ? "past" : ""}" data-trip="${escapeHtml(d.trip_number)}">
             <div class="dep-main">
               <div>
                 <div class="dep-times">
@@ -303,11 +345,22 @@
             </div>
             ${detailHtml}
           </div>
-        `;
-      })
+        `
+      )
       .join("");
 
-    listEl.querySelectorAll(".dep-card").forEach((card) => {
+    const restHtml = rest.length
+      ? `
+        <div class="dep-group">
+          <div class="dep-group-head">Upcoming</div>
+          ${restRowsHtml}
+        </div>
+      `
+      : "";
+
+    listEl.innerHTML = heroHtml + restHtml;
+
+    listEl.querySelectorAll("[data-trip]").forEach((card) => {
       card.addEventListener("click", () => toggleTripDetail(card.dataset.trip));
     });
   }
@@ -716,7 +769,7 @@
         ${snapNote}
         <div class="pred-hero">
           <div>
-            <div class="endpoint-label">PREDICTED BOARDING TRACK</div>
+            <div class="endpoint-label">Predicted track</div>
             <div class="pred-plat-big">${platLabel}</div>
           </div>
           <div class="pred-conf-wrap">

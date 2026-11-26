@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="GOTracker++" />
-  <meta name="theme-color" content="#1b5e20" />
+  <meta name="theme-color" content="#000000" />
   <title>GOTracker++</title>
   <link rel="manifest" href="/manifest.json" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
@@ -43,14 +43,14 @@
         <div class="route-card">
           <div class="route-endpoints">
             <div class="endpoint">
-              <span class="endpoint-label">FROM</span>
+              <span class="endpoint-label">From</span>
               <span class="endpoint-name" id="board-from-name">Agincourt GO</span>
             </div>
             <button class="btn-swap" id="btn-swap-dir" title="Switch direction" aria-label="Switch direction">
               <svg class="ico ico-swap" width="18" height="18" aria-hidden="true"><use href="/static/icons.svg#ico-arrow-left-right"></use></svg>
             </button>
             <div class="endpoint right">
-              <span class="endpoint-label">TO</span>
+              <span class="endpoint-label">To</span>
               <span class="endpoint-name" id="board-to-name">Union Station</span>
             </div>
           </div>
@@ -175,15 +175,15 @@
           </div>
           <div class="grid-3">
             <div class="field">
-              <label for="pref-delay-min">Delay Alert (min)</label>
+              <label for="pref-delay-min">Delay (min)</label>
               <input type="number" id="pref-delay-min" min="0" max="60" />
             </div>
             <div class="field">
-              <label for="pref-delay-step">Re-alert Step (min)</label>
+              <label for="pref-delay-step">Re-alert (min)</label>
               <input type="number" id="pref-delay-step" min="1" max="30" />
             </div>
             <div class="field">
-              <label for="pref-lead-min">Lead Window (min)</label>
+              <label for="pref-lead-min">Window (min)</label>
               <input type="number" id="pref-lead-min" min="15" max="240" />
             </div>
           </div>
