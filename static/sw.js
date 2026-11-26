@@ -1,4 +1,4 @@
-const CACHE_NAME = "gotracker-pp-v4";
+const CACHE_NAME = "gotracker-pp-v5";
 const SHELL_ASSETS = [
   "/",
   "/static/styles.css",

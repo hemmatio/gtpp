@@ -938,6 +938,206 @@
     });
   }
 
+  // ---- Interactive First-Visit Onboarding Tutorial ----
+  const TUTORIAL_STORAGE_KEY = "gtpp_tutorial_seen_v1";
+
+  function setupTutorial() {
+    let stepIdx = 0;
+
+    function buildSteps() {
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || "") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+
+      let step4Html = "";
+      if (isStandalone) {
+        step4Html = `
+          <div class="tut-callout ok">
+            ${svgIcon("circle-check", "sm ico-ok")}
+            <span><b>Already Installed!</b> You are running GOTracker++ from your Home Screen. Just enable notifications in <b>Alerts &rarr; Notifications</b>.</span>
+          </div>
+          <ul class="tut-list">
+            <li><span class="tut-num">1</span><span>Go to the <b>Alerts</b> tab at the bottom.</span></li>
+            <li><span class="tut-num">2</span><span>Under <b>Notifications</b>, tap <b>Enable Web Push</b> and allow notifications when prompted.</span></li>
+            <li><span class="tut-num">3</span><span>Tap <b>Send Test</b> to verify an alert lands on your lock screen.</span></li>
+          </ul>`;
+      } else if (isIOS) {
+        step4Html = `
+          <div class="tut-callout">
+            ${svgIcon("info", "sm ico-info")}
+            <span>Apple requires web apps to be added to your Home Screen before iOS can deliver Web Push notifications.</span>
+          </div>
+          <ul class="tut-list">
+            <li><span class="tut-num">1</span><span>Open <code>gtpp.omidhemmati.com</code> in <b>Safari</b> (not an in-app browser).</span></li>
+            <li><span class="tut-num">2</span><span>Tap the <b>Share</b> button ${svgIcon("share", "sm")} at the bottom of Safari.</span></li>
+            <li><span class="tut-num">3</span><span>Scroll down and tap <b>Add to Home Screen</b>, then tap <b>Add</b>.</span></li>
+            <li><span class="tut-num">4</span><span>Close Safari, launch the new <b>GOTracker++</b> icon, then tap <b>Alerts &rarr; Enable Web Push</b>.</span></li>
+          </ul>`;
+      } else {
+        step4Html = `
+          <div class="tut-callout">
+            ${svgIcon("info", "sm ico-info")}
+            <span>Using iPhone too? Open <code>gtpp.omidhemmati.com</code> in iOS Safari &rarr; <b>Share &rarr; Add to Home Screen</b> to unlock iPhone lock-screen push alerts.</span>
+          </div>
+          <ul class="tut-list">
+            <li><span class="tut-num">1</span><span>On desktop or Android, open the <b>Alerts</b> tab and tap <b>Enable Web Push</b> under <b>Notifications</b>.</span></li>
+            <li><span class="tut-num">2</span><span>Tap <b>Send Test</b> to confirm notifications work on this device.</span></li>
+            <li><span class="tut-num">3</span><span>To share your route and rules between phone and laptop, use <b>System &rarr; Generate Link Code</b>.</span></li>
+          </ul>`;
+      }
+
+      return [
+        {
+          icon: "train-front",
+          title: "Welcome to GOTracker++",
+          lead: "Live GO Transit board with automatic background updates",
+          html: `
+            <ul class="tut-list">
+              <li><span class="tut-num">1</span><span><b>Always Live:</b> The server polls GOTracker every 20-45s and streams changes straight to the <b>Board</b> tab.</span></li>
+              <li><span class="tut-num">2</span><span><b>Flip or Locate:</b> Tap ${svgIcon("arrow-left-right", "sm")} to swap direction, or tap <b>Locate</b> to auto-detect your nearest station via GPS.</span></li>
+              <li><span class="tut-num">3</span><span><b>Live Stop Timeline:</b> Tap any train card to expand every stop, scheduled vs. actual time, and track number.</span></li>
+              <li><span class="tut-num">4</span><span><b>Early Platform Hints:</b> Dashed ${svgIcon("sparkles", "sm")} <b>Est.</b> badges predict Union platforms with a confidence % before official boards post them.</span></li>
+            </ul>`,
+        },
+        {
+          icon: "map-pin",
+          title: "Set Your Commute Route",
+          lead: "Your profile is saved automatically via browser cookie",
+          html: `
+            <ul class="tut-list">
+              <li><span class="tut-num">1</span><span>Open the <b>Alerts</b> tab using the bottom navigation bar.</span></li>
+              <li><span class="tut-num">2</span><span>Under <b>Commute Route</b>, select your <b>Home Line &amp; Station</b> and <b>Destination Line &amp; Station</b> (e.g. Agincourt &harr; Union).</span></li>
+              <li><span class="tut-num">3</span><span>Tap <b>Save Route</b>. Your settings are private to this browser and syncable to another device in <b>System &rarr; Link Another Device</b>.</span></li>
+            </ul>`,
+        },
+        {
+          icon: "bell-ring",
+          title: "Set Your Alert Schedule",
+          lead: "Only get notified during the hours and directions you ride",
+          html: `
+            <ul class="tut-list">
+              <li><span class="tut-num">1</span><span>In <b>Alerts &rarr; Time-Window &amp; Direction Rules</b>, edit or tap <b>+ Add Rule</b>.</span></li>
+              <li><span class="tut-num">2</span><span>Pick a direction (e.g. <b>Home to Dest</b> in the morning, <b>Dest to Home</b> in the evening), days of week, and start/end hours.</span></li>
+              <li><span class="tut-num">3</span><span>Under <b>Alert Triggers</b>, choose what wakes your phone: Platform Announced, Platform Changed, Boarding (Proceed), Delays, Short Trains, or Cancellations.</span></li>
+            </ul>`,
+        },
+        {
+          icon: "smartphone",
+          title: "Add to Home Screen & Push",
+          lead: isStandalone ? "Installed PWA detected" : (isIOS ? "Required for iPhone lock-screen alerts" : "Installable PWA + instant Web Push"),
+          html: step4Html,
+        },
+        {
+          icon: "sparkles",
+          title: "Platform Predictor & Analytics",
+          lead: "Track delays, misleading estimates, and likely tracks",
+          html: `
+            <ul class="tut-list">
+              <li><span class="tut-num">1</span><span>Open the <b>Analytics</b> tab to use the <b>Union Platform Predictor</b> - pick a train or enter any time to snap to the nearest valid departure.</span></li>
+              <li><span class="tut-num">2</span><span>Inspect <b>Misleading Estimations</b> (how often GO says On Time before late delays) and historical platform consistency.</span></li>
+              <li><span class="tut-num">3</span><span>Tap any ${svgIcon("circle-help", "sm")} icon or <b>Metrics Guide</b> anytime for plain-English definitions.</span></li>
+            </ul>`,
+        },
+      ];
+    }
+
+    function markSeen() {
+      try {
+        localStorage.setItem(TUTORIAL_STORAGE_KEY, "1");
+      } catch (_) {}
+    }
+
+    function renderStep() {
+      const steps = buildSteps();
+      const total = steps.length;
+      if (stepIdx < 0) stepIdx = 0;
+      if (stepIdx >= total) stepIdx = total - 1;
+      const st = steps[stepIdx];
+
+      $("tut-step-label").textContent = `Step ${stepIdx + 1} of ${total}`;
+      $("tut-dots").innerHTML = steps
+        .map(
+          (_, i) =>
+            `<button type="button" class="tut-dot ${i === stepIdx ? "active" : i < stepIdx ? "done" : ""}" data-tut-idx="${i}" aria-label="Go to step ${i + 1}"></button>`
+        )
+        .join("");
+      $("tut-dots")
+        .querySelectorAll(".tut-dot")
+        .forEach((dot) => {
+          dot.addEventListener("click", () => {
+            stepIdx = Number(dot.dataset.tutIdx);
+            renderStep();
+          });
+        });
+
+      $("tut-body").innerHTML = `
+        <div class="tut-hero">
+          <div class="tut-hero-icon">${svgIcon(st.icon)}</div>
+          <div>
+            <h3 class="tut-title">${escapeHtml(st.title)}</h3>
+            <p class="tut-lead">${escapeHtml(st.lead)}</p>
+          </div>
+        </div>
+        ${st.html}
+      `;
+
+      $("tut-prev").disabled = stepIdx === 0;
+      const isLast = stepIdx === total - 1;
+      $("tut-cta").classList.toggle("hidden", !isLast);
+      $("tut-next").innerHTML = isLast
+        ? `<span>Done</span>${svgIcon("check", "sm")}`
+        : `<span>Next</span>${svgIcon("arrow-right", "sm")}`;
+    }
+
+    function openTutorial(startAt = 0) {
+      stepIdx = startAt;
+      renderStep();
+      $("tutorial-modal").classList.remove("hidden");
+    }
+
+    function closeTutorial() {
+      markSeen();
+      $("tutorial-modal").classList.add("hidden");
+    }
+
+    $("tut-prev").addEventListener("click", () => {
+      if (stepIdx > 0) {
+        stepIdx -= 1;
+        renderStep();
+      }
+    });
+    $("tut-next").addEventListener("click", () => {
+      const total = buildSteps().length;
+      if (stepIdx < total - 1) {
+        stepIdx += 1;
+        renderStep();
+      } else {
+        closeTutorial();
+      }
+    });
+    $("tut-cta").addEventListener("click", () => {
+      closeTutorial();
+      switchTab("alerts");
+    });
+    $("tut-close").addEventListener("click", closeTutorial);
+    $("tutorial-modal").addEventListener("click", (e) => {
+      if (e.target === $("tutorial-modal")) closeTutorial();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !$("tutorial-modal").classList.contains("hidden")) {
+        closeTutorial();
+      }
+    });
+
+    $("btn-open-tutorial").addEventListener("click", () => openTutorial(0));
+    $("btn-replay-tutorial").addEventListener("click", () => openTutorial(0));
+
+    try {
+      if (!localStorage.getItem(TUTORIAL_STORAGE_KEY)) {
+        openTutorial(0);
+      }
+    } catch (_) {}
+  }
+
   async function loadSystemTab() {
     try {
       const [h, me] = await Promise.all([api("/api/health"), api("/api/me")]);
@@ -1053,6 +1253,7 @@
     }
 
     setupTooltips();
+    setupTutorial();
 
     document.querySelectorAll(".nav-btn").forEach((btn) => {
       btn.addEventListener("click", () => switchTab(btn.dataset.tab));

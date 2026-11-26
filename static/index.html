@@ -28,6 +28,9 @@
           <svg class="ico" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#ico-locate-fixed"></use></svg>
           <span>Locate</span>
         </button>
+        <button class="btn-icon" id="btn-open-tutorial" title="App Tutorial" aria-label="Open Tutorial">
+          <svg class="ico" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#ico-circle-help"></use></svg>
+        </button>
         <button class="btn-icon" id="btn-poll-top" title="Force poll now" aria-label="Refresh">
           <svg class="ico" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#ico-refresh-cw"></use></svg>
         </button>
@@ -403,7 +406,13 @@
         </div>
 
         <div class="card">
-          <h2>iOS Readiness Checklist</h2>
+          <div class="card-header-row">
+            <h2>iOS Readiness Checklist</h2>
+            <button type="button" class="btn-small secondary" id="btn-replay-tutorial">
+              <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-graduation-cap"></use></svg>
+              <span>Replay Tutorial</span>
+            </button>
+          </div>
           <ul id="ios-checklist" class="checklist"></ul>
           <p class="hint">Open <code>https://gtpp.omidhemmati.com/</code> in Safari &rarr; tap <b>Share &rarr; Add to Home Screen</b>, then subscribe to Web Push from the installed app.</p>
         </div>
@@ -462,6 +471,33 @@
         </button>
       </div>
       <div id="glossary-content" class="glossary-content"></div>
+    </div>
+  </div>
+
+  <!-- Interactive Onboarding Tutorial Modal -->
+  <div id="tutorial-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-sheet modal-tall tutorial-sheet">
+      <div class="modal-head">
+        <span class="pill" id="tut-step-label">Step 1 of 5</span>
+        <button type="button" class="btn-icon" id="tut-close" aria-label="Close tutorial">
+          <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-x"></use></svg>
+        </button>
+      </div>
+      <div class="tut-dots" id="tut-dots"></div>
+      <div id="tut-body" class="tut-body"></div>
+      <div class="tut-footer">
+        <button type="button" class="btn-secondary" id="tut-prev">
+          <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-arrow-left"></use></svg>
+          <span>Back</span>
+        </button>
+        <button type="button" class="btn-secondary hidden" id="tut-cta">
+          <span>Set Up Alerts</span>
+        </button>
+        <button type="button" class="btn-primary" id="tut-next">
+          <span>Next</span>
+          <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-arrow-right"></use></svg>
+        </button>
+      </div>
     </div>
   </div>
 

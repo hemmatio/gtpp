@@ -932,6 +932,130 @@ html, body {
   border-top: 1px solid var(--border);
 }
 
+/* Onboarding Tutorial Modal */
+.tutorial-sheet {
+  max-width: 500px;
+}
+.tut-dots {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.tut-dot {
+  flex: 1;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.tut-dot.active {
+  background: var(--go-bright);
+  border-color: var(--go-bright);
+}
+.tut-dot.done {
+  background: rgba(76, 175, 80, 0.45);
+}
+.tut-body {
+  overflow-y: auto;
+  padding-right: 2px;
+  flex: 1;
+}
+.tut-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.tut-hero-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(76, 175, 80, 0.15);
+  border: 1px solid rgba(76, 175, 80, 0.35);
+  color: var(--go-bright);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.tut-hero-icon .ico {
+  width: 22px;
+  height: 22px;
+}
+.tut-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+.tut-lead {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.tut-list {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.tut-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.tut-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--go-green);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.tut-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: rgba(79, 195, 247, 0.10);
+  border: 1px solid rgba(79, 195, 247, 0.35);
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-size: 12.5px;
+  color: var(--text);
+  margin-top: 8px;
+}
+.tut-callout.ok {
+  background: rgba(76, 175, 80, 0.12);
+  border-color: rgba(76, 175, 80, 0.4);
+}
+.tut-footer {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.tut-footer > button {
+  flex: 1;
+}
+
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
