@@ -70,6 +70,19 @@ def hash_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
+def _snapshot_state_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        str(row.get("predicted_time") or ""),
+        int(row.get("delay_sec") or 0),
+        str(row.get("platform") or "-").strip() or "-",
+        str(row.get("sch_track") or "").strip(),
+        str(row.get("info_status") or "").strip(),
+        1 if row.get("is_cancelled") else 0,
+        row.get("coach_count"),
+        row.get("scheduled_coach_count"),
+    )
+
+
 class Database:
     """Thread/async-safe SQLite repository using WAL mode."""
 
@@ -240,6 +253,16 @@ class Database:
             if "user_id" not in ev_cols:
                 conn.execute("ALTER TABLE events ADD COLUMN user_id TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_user ON events (user_id, created_at DESC)")
+
+            snap_cols = {r["name"] for r in conn.execute("PRAGMA table_info(trip_snapshots)").fetchall()}
+            if "last_seen_at" not in snap_cols:
+                conn.execute("ALTER TABLE trip_snapshots ADD COLUMN last_seen_at TEXT")
+                conn.execute("UPDATE trip_snapshots SET last_seen_at = captured_at WHERE last_seen_at IS NULL")
+            if "sample_count" not in snap_cols:
+                conn.execute("ALTER TABLE trip_snapshots ADD COLUMN sample_count INTEGER NOT NULL DEFAULT 1")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_snapshots_latest ON trip_snapshots (service_date, trip_number, station_code, id DESC)"
+            )
 
             # Recreate live_departures with canonical physical-leg PK if legacy schema has 'direction'
             ld_row = conn.execute(
@@ -786,20 +809,51 @@ class Database:
             return json.loads(row["messages_json"])
 
     # ---- Snapshots, Outcomes, Events ----
-    def insert_snapshot(self, snap: dict[str, Any]) -> None:
+    def record_snapshot(self, snap: dict[str, Any]) -> tuple[str, int]:
+        """Insert a snapshot or coalesce into the latest interval if state is unchanged."""
+        cap_ts = snap.get("captured_at") or now_toronto().isoformat()
+        last_ts = snap.get("last_seen_at") or cap_ts
+        new_key = _snapshot_state_key(snap)
+
         with self.connect() as conn:
-            conn.execute(
+            latest = conn.execute(
+                """
+                SELECT id, predicted_time, delay_sec, platform, sch_track, info_status,
+                       is_cancelled, coach_count, scheduled_coach_count, last_seen_at
+                FROM trip_snapshots
+                WHERE service_date = ? AND trip_number = ? AND station_code = ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (snap["service_date"], snap["trip_number"], snap["station_code"]),
+            ).fetchone()
+
+            if latest and _snapshot_state_key(dict(latest)) == new_key:
+                prev_last = latest["last_seen_at"] or ""
+                merged_last = last_ts if last_ts >= prev_last else prev_last
+                conn.execute(
+                    """
+                    UPDATE trip_snapshots
+                    SET last_seen_at = ?, sample_count = COALESCE(sample_count, 1) + 1
+                    WHERE id = ?
+                    """,
+                    (merged_last, latest["id"]),
+                )
+                return "coalesced", int(latest["id"])
+
+            cur = conn.execute(
                 """
                 INSERT INTO trip_snapshots (
-                    captured_at, service_date, corridor, station_code, direction,
-                    trip_number, scheduled_time, predicted_time, delay_sec,
+                    captured_at, last_seen_at, sample_count, service_date, corridor, station_code,
+                    direction, trip_number, scheduled_time, predicted_time, delay_sec,
                     platform, sch_track, info_status, is_cancelled, is_express,
                     coach_count, scheduled_coach_count, source
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    snap.get("captured_at") or now_toronto().isoformat(),
+                    cap_ts,
+                    last_ts,
+                    int(snap.get("sample_count", 1)),
                     snap["service_date"],
                     snap["corridor"],
                     snap["station_code"],
@@ -818,6 +872,102 @@ class Database:
                     snap.get("source", "poll"),
                 ),
             )
+            return "inserted", int(cur.lastrowid)
+
+    def insert_snapshot(self, snap: dict[str, Any]) -> None:
+        self.record_snapshot(snap)
+
+    def compact_snapshots(self, max_age_days: int = 180, vacuum: bool = False) -> dict[str, Any]:
+        """Prune snapshots older than max_age_days and merge consecutive identical-state rows."""
+        cutoff = (now_toronto() - timedelta(days=max_age_days)).strftime("%Y-%m-%d")
+        with self.connect() as conn:
+            rows_before = int(conn.execute("SELECT COUNT(*) FROM trip_snapshots").fetchone()[0])
+            del_cur = conn.execute("DELETE FROM trip_snapshots WHERE service_date < ?", (cutoff,))
+            pruned_old_count = int(del_cur.rowcount or 0)
+
+            rows = conn.execute(
+                """
+                SELECT id, captured_at, last_seen_at, sample_count, service_date, trip_number,
+                       station_code, predicted_time, delay_sec, platform, sch_track,
+                       info_status, is_cancelled, coach_count, scheduled_coach_count
+                FROM trip_snapshots
+                ORDER BY service_date ASC, trip_number ASC, station_code ASC, captured_at ASC, id ASC
+                """
+            ).fetchall()
+
+            keep_id: int | None = None
+            keep_group: tuple[str, str, str] | None = None
+            keep_state: tuple[Any, ...] | None = None
+            keep_last: str = ""
+            keep_samples: int = 1
+            dirty = False
+
+            updates: list[tuple[str, int, int]] = []
+            delete_ids: list[int] = []
+
+            for r in rows:
+                rd = dict(r)
+                grp = (rd["service_date"], rd["trip_number"], rd["station_code"])
+                st = _snapshot_state_key(rd)
+                r_last = rd.get("last_seen_at") or rd["captured_at"]
+                r_samples = int(rd.get("sample_count") or 1)
+
+                if keep_id is not None and grp == keep_group and st == keep_state:
+                    if r_last > keep_last:
+                        keep_last = r_last
+                    keep_samples += r_samples
+                    delete_ids.append(int(rd["id"]))
+                    dirty = True
+                else:
+                    if keep_id is not None and dirty:
+                        updates.append((keep_last, keep_samples, keep_id))
+                    keep_id = int(rd["id"])
+                    keep_group = grp
+                    keep_state = st
+                    keep_last = r_last
+                    keep_samples = r_samples
+                    dirty = False
+
+            if keep_id is not None and dirty:
+                updates.append((keep_last, keep_samples, keep_id))
+
+            if updates:
+                conn.executemany(
+                    "UPDATE trip_snapshots SET last_seen_at = ?, sample_count = ? WHERE id = ?",
+                    updates,
+                )
+            for i in range(0, len(delete_ids), 500):
+                chunk = delete_ids[i : i + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                conn.execute(f"DELETE FROM trip_snapshots WHERE id IN ({placeholders})", chunk)
+
+            rows_after = int(conn.execute("SELECT COUNT(*) FROM trip_snapshots").fetchone()[0])
+
+        merged_count = len(delete_ids)
+        maint_conn = sqlite3.connect(self.db_path, timeout=15.0, isolation_level=None)
+        try:
+            maint_conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            if vacuum or merged_count >= 50 or pruned_old_count >= 50:
+                maint_conn.execute("VACUUM;")
+                maint_conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+        finally:
+            maint_conn.close()
+
+        return {
+            "rows_before": rows_before,
+            "rows_after": rows_after,
+            "merged_count": merged_count,
+            "pruned_old_count": pruned_old_count,
+            "db_size_kb": self.get_db_size_kb(),
+        }
+
+    def get_db_size_kb(self) -> float:
+        total = 0
+        for suffix in ("", "-wal", "-shm"):
+            p = Path(str(self.db_path) + suffix)
+            if p.exists():
+                total += p.stat().st_size
+        return round(total / 1024.0, 1)
 
     def upsert_outcome(self, outcome: dict[str, Any]) -> None:
         now_iso = outcome.get("recorded_at") or now_toronto().isoformat()
@@ -995,9 +1145,13 @@ class Database:
 
             return {
                 "snapshots_count": conn.execute("SELECT COUNT(*) FROM trip_snapshots").fetchone()[0],
+                "snapshot_observations": int(
+                    conn.execute("SELECT COALESCE(SUM(COALESCE(sample_count, 1)), 0) FROM trip_snapshots").fetchone()[0]
+                ),
                 "outcomes_count": conn.execute("SELECT COUNT(*) FROM trip_outcomes").fetchone()[0],
                 "events_count": events_cnt,
                 "notified_count": notified_cnt,
                 "push_subs_count": subs_cnt,
                 "users_count": conn.execute("SELECT COUNT(*) FROM users").fetchone()[0],
+                "db_size_kb": self.get_db_size_kb(),
             }

@@ -120,16 +120,26 @@ def compute_analytics(db: Database, days: int = 30, user_id: str | None = None) 
             continue
 
         for label, min_lead, max_lead in buckets_spec:
-            target_mid = (min_lead + max_lead) / 2.0
+            win_start = sched_dt - timedelta(seconds=max_lead)
+            win_end = sched_dt - timedelta(seconds=min_lead)
+            target_dt = sched_dt - timedelta(seconds=(min_lead + max_lead) / 2.0)
             best_snap = None
             best_dist = 1e9
             for s in trip_snaps:
                 cap_dt = _parse_iso(s.get("captured_at"))
                 if not cap_dt:
                     continue
-                lead = (sched_dt - cap_dt).total_seconds()
-                if min_lead <= lead <= max_lead:
-                    dist = abs(lead - target_mid)
+                end_dt = _parse_iso(s.get("last_seen_at")) or cap_dt
+                if end_dt < cap_dt:
+                    end_dt = cap_dt
+                if cap_dt <= win_end and end_dt >= win_start:
+                    if cap_dt <= target_dt <= end_dt:
+                        dist = 0.0
+                    else:
+                        dist = min(
+                            abs((target_dt - cap_dt).total_seconds()),
+                            abs((target_dt - end_dt).total_seconds()),
+                        )
                     if dist < best_dist:
                         best_dist = dist
                         best_snap = s
@@ -274,6 +284,7 @@ def compute_analytics(db: Database, days: int = 30, user_id: str | None = None) 
         "data_source": "snapshots_fallback" if using_fallback else "outcomes",
         "kpis": {
             "total_snapshots": counts["snapshots_count"],
+            "snapshot_observations": counts.get("snapshot_observations", counts["snapshots_count"]),
             "total_outcomes": counts["outcomes_count"],
             "total_events": counts["events_count"],
             "notifications_sent": counts["notified_count"],

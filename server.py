@@ -784,6 +784,15 @@ async def handle_predict_platform(request: web.Request) -> web.Response:
     )
 
 
+@routes.post("/api/system/compact")
+async def handle_system_compact(request: web.Request) -> web.Response:
+    db: Database = request.app["db"]
+    poller: TrackerPoller = request.app["poller"]
+    async with poller._poll_lock:
+        result = db.compact_snapshots(max_age_days=180, vacuum=True)
+    return web.json_response({"status": "ok", **result})
+
+
 @routes.get("/api/analytics/export")
 async def handle_analytics_export(request: web.Request) -> web.Response:
     db: Database = request.app["db"]

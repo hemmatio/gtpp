@@ -389,10 +389,17 @@
         <div class="card">
           <h2>Backend Poller &amp; Database</h2>
           <div id="system-stats" class="stats-list"></div>
-          <button class="btn-primary" id="btn-poll-sys">
-            <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-refresh-cw"></use></svg>
-            <span>Poll GOTracker Now</span>
-          </button>
+          <div class="btn-row">
+            <button class="btn-primary" id="btn-poll-sys">
+              <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-refresh-cw"></use></svg>
+              <span>Poll GOTracker Now</span>
+            </button>
+            <button class="btn-secondary" id="btn-compact-db">
+              <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-trash-2"></use></svg>
+              <span>Compact &amp; Prune DB</span>
+            </button>
+          </div>
+          <div id="compact-result" class="status-box hidden"></div>
         </div>
 
         <div class="card">

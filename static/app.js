@@ -19,7 +19,7 @@
     snapshots: {
       group: "Overview KPIs",
       title: "Snapshots Logged",
-      body: "Total point-in-time observations saved by the background poller whenever a train's predicted time, delay, platform, or coach count changes (plus 2-minute heartbeats near departure).",
+      body: "Stored snapshot state intervals. Unchanged consecutive polls are automatically merged into a single [captured_at, last_seen_at] interval with a sample count to save disk space without losing any timeline resolution.",
     },
     outcomes: {
       group: "Overview KPIs",
@@ -952,14 +952,17 @@
         <div class="stat-row"><span>Your Web Push Devices</span><b>${me.counts?.push_subs_count ?? 0}</b></div>
       `;
 
+      const obs = h.snapshot_observations ?? h.snapshots_count ?? 0;
+      const savedPct = obs > 0 ? Math.max(0, Math.round(100 * (1 - h.snapshots_count / obs))) : 0;
       $("system-stats").innerHTML = `
         <div class="stat-row"><span>Status</span><b>${escapeHtml(h.status)}</b></div>
         <div class="stat-row"><span>Last Poll</span><b>${h.last_poll_at ? fmtRelative(h.last_poll_at) : "never"} (${h.last_poll_ms}ms)</b></div>
         <div class="stat-row"><span>Upstream Poll OK</span><b>${h.poll_ok ? "Yes" : "Error: " + escapeHtml(h.last_error || "unknown")}</b></div>
         <div class="stat-row"><span>Active Profiles</span><b>${h.users_count ?? 1}</b></div>
         <div class="stat-row"><span>Live Departures Cached</span><b>${h.trips_live}</b></div>
-        <div class="stat-row"><span>Snapshots Stored</span><b>${h.snapshots_count}</b></div>
+        <div class="stat-row"><span>Snapshots (Coalesced)</span><b>${h.snapshots_count} intervals (${obs} polls, ${savedPct}% saved)</b></div>
         <div class="stat-row"><span>Outcomes Stored</span><b>${h.outcomes_count}</b></div>
+        <div class="stat-row"><span>Database Size</span><b>${h.db_size_kb != null ? h.db_size_kb + " KB" : "--"}</b></div>
       `;
 
       const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
@@ -1071,6 +1074,18 @@
     };
     $("btn-poll-top").addEventListener("click", doPoll);
     $("btn-poll-sys").addEventListener("click", doPoll);
+    $("btn-compact-db").addEventListener("click", async () => {
+      const box = $("compact-result");
+      box.classList.remove("hidden");
+      box.textContent = "Compacting and pruning snapshots...";
+      try {
+        const res = await api("/api/system/compact", { method: "POST" });
+        box.textContent = `Done: ${res.rows_before} -> ${res.rows_after} rows (merged ${res.merged_count}, pruned ${res.pruned_old_count} old, DB ${res.db_size_kb} KB).`;
+        loadSystemTab();
+      } catch (err) {
+        box.textContent = "Compaction failed: " + err.message;
+      }
+    });
 
     $("btn-toggle-advisories").addEventListener("click", () => {
       $("advisories-list").classList.toggle("hidden");

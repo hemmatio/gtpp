@@ -294,6 +294,7 @@ class TrackerPoller:
         self._msg_fetch_ts: dict[tuple[str, str], float] = {}
         self._detail_cache: dict[str, tuple[float, dict[str, Any]]] = {}
         self._last_snapshot_ts: dict[tuple[str, str, str], float] = {}
+        self._last_compact_ts: float = 0.0
         self._catalog_mem: dict[str, Any] | None = None
         self._catalog_ts: float = 0.0
 
@@ -377,6 +378,10 @@ class TrackerPoller:
         while self._running:
             try:
                 await self.poll_once()
+                if (time.monotonic() - self._last_compact_ts) >= 24 * 3600:
+                    async with self._poll_lock:
+                        self.db.compact_snapshots(max_age_days=180, vacuum=False)
+                        self._last_compact_ts = time.monotonic()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -757,10 +762,11 @@ class TrackerPoller:
                         and -15 * 60 <= (sched_dt - now).total_seconds() <= 90 * 60
                     )
 
-                    if changed or (within_snap_window and (now_mono - last_snap) >= SNAPSHOT_HEARTBEAT_SEC):
-                        self.db.insert_snapshot(
+                    if changed or within_snap_window:
+                        self.db.record_snapshot(
                             {
                                 "captured_at": now.isoformat(),
+                                "last_seen_at": now.isoformat(),
                                 "service_date": service_date,
                                 "corridor": row["corridor"],
                                 "station_code": row["origin_code"],
