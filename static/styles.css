@@ -1113,6 +1113,8 @@ html, body {
   box-shadow: 0 0 0 4px rgba(48, 209, 88, 0.22), 0 0 24px rgba(48, 209, 88, 0.35);
   pointer-events: none;
   z-index: 81;
+}
+.tour-overlay.tour-animating .tour-ring {
   transition: top 0.22s ease, left 0.22s ease, width 0.22s ease, height 0.22s ease;
 }
 .tour-card {
@@ -1130,6 +1132,8 @@ html, body {
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.78);
   pointer-events: auto;
   z-index: 82;
+}
+.tour-overlay.tour-animating .tour-card {
   transition: top 0.22s ease;
 }
 .tut-dots {

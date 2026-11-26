@@ -1129,8 +1129,10 @@
 
       ring.classList.remove("hidden");
       const r = target.getBoundingClientRect();
+      const topBar = document.querySelector(".top-bar");
+      const minTop = topBar ? Math.round(topBar.getBoundingClientRect().bottom) : 0;
       const pad = 8;
-      const top = Math.max(0, Math.round(r.top - pad));
+      const top = Math.max(minTop, Math.round(r.top - pad));
       const left = Math.max(0, Math.round(r.left - pad));
       const right = Math.min(vw, Math.round(r.right + pad));
       // Cap cutout height so tall sections still leave room for the docked coachmark card
@@ -1218,10 +1220,15 @@
       if (shouldScroll) {
         const target = document.querySelector(st.selector);
         if (target) {
+          const topBarH = document.querySelector(".top-bar")?.offsetHeight || 74;
           const absTop = target.getBoundingClientRect().top + window.scrollY;
-          window.scrollTo({ top: Math.max(0, absTop - 74), behavior: "instant" });
+          window.scrollTo({ top: Math.max(0, absTop - topBarH - 14), behavior: "instant" });
         }
       }
+      const overlay = $("tour-overlay");
+      overlay.classList.add("tour-animating");
+      clearTimeout(overlay._animTimer);
+      overlay._animTimer = setTimeout(() => overlay.classList.remove("tour-animating"), 240);
       requestAnimationFrame(() => positionSpotlight());
     }
 
@@ -1264,7 +1271,15 @@
       }
     });
     window.addEventListener("resize", schedulePosition);
-    window.addEventListener("scroll", schedulePosition, { passive: true });
+    window.addEventListener(
+      "scroll",
+      () => {
+        if (!isOpen) return;
+        $("tour-overlay").classList.remove("tour-animating");
+        positionSpotlight();
+      },
+      { passive: true }
+    );
 
     $("btn-open-tutorial").addEventListener("click", () => openTutorial(0));
     $("btn-replay-tutorial").addEventListener("click", () => openTutorial(0));
