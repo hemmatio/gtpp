@@ -447,11 +447,12 @@ class TrackerPoller:
                         non_un_name = (stations.get(non_un_code) or {}).get("name", non_un_code)
                         signage_targets.add((non_un_corr, non_un_code))
                         union_targets.add((non_un_corr, non_un_code, non_un_name))
-                        msg_targets.add((non_un_corr, non_un_code))
                 else:
                     signage_targets.add((h_corr, h_stat))
                     signage_targets.add((d_corr, d_stat))
-                    msg_targets.add((h_corr, h_stat))
+
+                msg_targets.add((h_corr, h_stat))
+                msg_targets.add((d_corr, d_stat))
 
             try:
                 now_mono = time.monotonic()

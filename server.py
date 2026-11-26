@@ -179,9 +179,10 @@ def _build_live_payload(db: Database, poller: TrackerPoller, user_id: str) -> di
 
     h_code = route.get("home_station", "AG")
     d_code = route.get("dest_station", "UN")
-    non_un_corr = route.get("home_corridor", "ST") if d_code == "UN" else route.get("dest_corridor", "ST")
-    non_un_code = h_code if d_code == "UN" else d_code
-    messages = db.get_station_messages(non_un_corr, non_un_code)
+    h_corr = route.get("home_corridor", "ST")
+    d_corr = route.get("dest_corridor", "ST")
+    home_msgs = db.get_station_messages(h_corr, h_code)
+    dest_msgs = db.get_station_messages(d_corr, d_code)
 
     now = now_toronto()
     hist = collect_historical_platforms(db, days=90)
@@ -212,7 +213,11 @@ def _build_live_payload(db: Database, poller: TrackerPoller, user_id: str) -> di
         "dest_meta": stations.get(d_code, {"code": d_code, "name": d_code}),
         "eligibility": elig,
         "departures": departures,
-        "station_messages": messages,
+        "station_messages": home_msgs,
+        "station_messages_by_dir": {
+            "home_to_dest": home_msgs,
+            "dest_to_home": dest_msgs,
+        },
         "poller": {
             "last_poll_at": poller.last_poll_at,
             "last_poll_ok": poller.last_poll_ok,

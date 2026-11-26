@@ -214,7 +214,8 @@
       armedBadge.innerHTML = `${svgIcon("bell-off", "sm")}<span>Outside Alert Window</span>`;
     }
 
-    const msgs = live.station_messages || [];
+    const msgsByDir = live.station_messages_by_dir || {};
+    const msgs = msgsByDir[state.direction] ?? live.station_messages ?? [];
     const advBox = $("advisories-box");
     if (msgs.length > 0) {
       advBox.classList.remove("hidden");
