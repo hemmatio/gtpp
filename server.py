@@ -43,52 +43,86 @@ def _make_png(width: int, height: int, rgba_rows: list[bytes]) -> bytes:
     )
 
 
+def _sd_rounded_box(x: float, y: float, cx: float, cy: float, hw: float, hh: float, r: float) -> float:
+    dx = abs(x - cx) - (hw - r)
+    dy = abs(y - cy) - (hh - r)
+    return math.hypot(max(dx, 0.0), max(dy, 0.0)) + min(max(dx, dy), 0.0) - r
+
+
+def _sd_segment(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> float:
+    pax, pay = px - ax, py - ay
+    bax, bay = bx - ax, by - ay
+    denom = bax * bax + bay * bay
+    h = max(0.0, min(1.0, (pax * bax + pay * bay) / denom)) if denom > 0 else 0.0
+    return math.hypot(pax - bax * h, pay - bay * h)
+
+
+def _blend(bg: tuple[float, float, float], fg: tuple[float, float, float], alpha: float) -> tuple[float, float, float]:
+    a = max(0.0, min(1.0, alpha))
+    return (
+        bg[0] * (1.0 - a) + fg[0] * a,
+        bg[1] * (1.0 - a) + fg[1] * a,
+        bg[2] * (1.0 - a) + fg[2] * a,
+    )
+
+
 def _render_icon_png(size: int) -> bytes:
-    """Render a clean GO-green transit app icon with a geometric train-front emblem."""
+    """Render an anti-aliased GO-green transit app icon via SDF geometry."""
     rows: list[bytes] = []
-    cx = size / 2.0
-    cy = size / 2.0
+    px_scale = 2.0 / max(1, size)
+    aa = px_scale * 1.1
+
+    def cov(sd: float) -> float:
+        return max(0.0, min(1.0, 0.5 - sd / aa))
+
     for y in range(size):
         row = bytearray(size * 4)
-        ny = (y - cy) / (size * 0.5)
+        ny = (y + 0.5) * px_scale - 1.0
+        t = y / max(1, size - 1)
         for x in range(size):
-            nx = (x - cx) / (size * 0.5)
-            # Base dark-to-GO-green vertical gradient
-            t = y / max(1, size - 1)
-            r = int(18 + 24 * (1 - t))
-            g = int(78 + 48 * (1 - t))
-            b = int(32 + 20 * (1 - t))
-            a = 255
+            nx = (x + 0.5) * px_scale - 1.0
+            rad_glow = max(0.0, 1.0 - math.hypot(nx, ny + 0.25) * 0.85)
+            col = (
+                12.0 + 18.0 * (1.0 - t) + 14.0 * rad_glow,
+                56.0 + 54.0 * (1.0 - t) + 26.0 * rad_glow,
+                25.0 + 24.0 * (1.0 - t) + 12.0 * rad_glow,
+            )
 
-            # Outer subtle ring
-            dist_box = max(abs(nx), abs(ny))
-            if 0.82 <= dist_box <= 0.86:
-                r, g, b = 129, 199, 132
+            # Subtle inner transit arch / ring
+            ring_sd = abs(_sd_rounded_box(nx, ny, 0.0, 0.0, 0.82, 0.82, 0.24)) - 0.015
+            col = _blend(col, (140.0, 218.0, 152.0), cov(ring_sd) * 0.28)
 
-            # Stylized train body
-            in_body = (-0.36 <= nx <= 0.36) and (-0.44 <= ny <= 0.30)
-            in_roof = (-0.28 <= nx <= 0.28) and (-0.52 <= ny < -0.44)
-            in_windshield = (-0.25 <= nx <= 0.25) and (-0.34 <= ny <= -0.04)
-            in_headlight_l = ((nx + 0.20) ** 2 + (ny - 0.14) ** 2) <= 0.065 ** 2
-            in_headlight_r = ((nx - 0.20) ** 2 + (ny - 0.14) ** 2) <= 0.065 ** 2
-            # Track rails underneath
-            in_rail_l = abs(nx - (-0.24 - (ny - 0.30) * 0.35)) <= 0.045 and (0.34 <= ny <= 0.62)
-            in_rail_r = abs(nx - (0.24 + (ny - 0.30) * 0.35)) <= 0.045 and (0.34 <= ny <= 0.62)
-            in_tie_1 = (-0.32 <= nx <= 0.32) and (0.42 <= ny <= 0.47)
-            in_tie_2 = (-0.38 <= nx <= 0.38) and (0.53 <= ny <= 0.58)
+            # Perspective rails + ties below train
+            rail_l = _sd_segment(nx, ny, -0.22, 0.34, -0.40, 0.66) - 0.032
+            rail_r = _sd_segment(nx, ny, 0.22, 0.34, 0.40, 0.66) - 0.032
+            tie_1 = _sd_rounded_box(nx, ny, 0.0, 0.44, 0.30, 0.024, 0.012)
+            tie_2 = _sd_rounded_box(nx, ny, 0.0, 0.57, 0.38, 0.026, 0.013)
+            rails_sd = min(rail_l, rail_r, tie_1, tie_2)
+            col = _blend(col, (220.0, 240.0, 224.0), cov(rails_sd) * 0.85)
 
-            if in_windshield:
-                r, g, b = 15, 42, 22
-            elif in_headlight_l or in_headlight_r:
-                r, g, b = 255, 224, 130
-            elif in_body or in_roof or in_rail_l or in_rail_r or in_tie_1 or in_tie_2:
-                r, g, b = 245, 250, 245
+            # Train body + roof dome
+            body_sd = _sd_rounded_box(nx, ny, 0.0, -0.05, 0.34, 0.40, 0.12)
+            roof_sd = _sd_rounded_box(nx, ny, 0.0, -0.46, 0.19, 0.055, 0.035)
+            train_sd = min(body_sd, roof_sd)
+            col = _blend(col, (246.0, 250.0, 247.0), cov(train_sd))
+
+            # Recessed windshield & destination band
+            wind_sd = _sd_rounded_box(nx, ny, 0.0, -0.17, 0.24, 0.145, 0.055)
+            col = _blend(col, (13.0, 44.0, 22.0), cov(wind_sd))
+            band_sd = _sd_rounded_box(nx, ny, 0.0, -0.37, 0.14, 0.022, 0.011)
+            col = _blend(col, (48.0, 209.0, 88.0), cov(band_sd) * 0.9)
+
+            # Warm headlights
+            hl_l = math.hypot(nx + 0.18, ny - 0.16) - 0.062
+            hl_r = math.hypot(nx - 0.18, ny - 0.16) - 0.062
+            hl_sd = min(hl_l, hl_r)
+            col = _blend(col, (255.0, 214.0, 74.0), cov(hl_sd))
 
             idx = x * 4
-            row[idx] = r
-            row[idx + 1] = g
-            row[idx + 2] = b
-            row[idx + 3] = a
+            row[idx] = max(0, min(255, int(round(col[0]))))
+            row[idx + 1] = max(0, min(255, int(round(col[1]))))
+            row[idx + 2] = max(0, min(255, int(round(col[2]))))
+            row[idx + 3] = 255
         rows.append(bytes(row))
     return _make_png(size, size, rows)
 
@@ -233,7 +267,7 @@ routes = web.RouteTableDef()
 def compute_asset_version() -> str:
     """Hash core frontend assets so every deploy busts Cloudflare/browser caches."""
     h = hashlib.sha256()
-    for name in ("styles.css", "app.js", "icons.svg"):
+    for name in ("styles.css", "app.js", "icons.svg", "icon-192.png", "apple-touch-icon.png"):
         fpath = STATIC_DIR / name
         if fpath.is_file():
             h.update(fpath.read_bytes())
@@ -248,6 +282,8 @@ async def handle_index(request: web.Request) -> web.Response:
         html.replace("/static/styles.css", f"/static/styles.css?v={ver}")
         .replace("/static/app.js", f"/static/app.js?v={ver}")
         .replace("/static/icons.svg", f"/static/icons.svg?v={ver}")
+        .replace("/static/icon-192.png", f"/static/icon-192.png?v={ver}")
+        .replace("/static/apple-touch-icon.png", f"/static/apple-touch-icon.png?v={ver}")
         .replace(
             "</head>",
             f'  <script>window.__GTPP_ICONS_URL="/static/icons.svg?v={ver}";</script>\n</head>',

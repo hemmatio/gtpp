@@ -81,13 +81,13 @@ def compute_analytics(db: Database, days: int = 30, user_id: str | None = None) 
         else 0.0
     )
 
-    # Platform announcement lead time & schTrack accuracy from outcomes
-    lead_secs = [
+    # Platform announcement lead time (scoped to Union Station where gate drops happen) & schTrack accuracy
+    union_lead_secs = [
         int(o["platform_lead_sec"])
         for o in outcomes
-        if o.get("platform_lead_sec") is not None and o["platform_lead_sec"] >= 0
+        if o.get("stop_code") == "UN" and o.get("platform_lead_sec") is not None and o["platform_lead_sec"] >= 0
     ]
-    avg_platform_lead_min = round(statistics.mean(lead_secs) / 60.0, 1) if lead_secs else None
+    avg_platform_lead_min = round(statistics.mean(union_lead_secs) / 60.0, 1) if union_lead_secs else None
 
     track_pairs = [
         (str(o.get("sch_track") or "").strip(), str(o.get("act_track") or "").strip())
@@ -286,6 +286,7 @@ def compute_analytics(db: Database, days: int = 30, user_id: str | None = None) 
             "total_snapshots": counts["snapshots_count"],
             "snapshot_observations": counts.get("snapshot_observations", counts["snapshots_count"]),
             "total_outcomes": counts["outcomes_count"],
+            "outcome_sample_count": len(records),
             "total_events": counts["events_count"],
             "notifications_sent": counts["notified_count"],
             "avg_delay_min": avg_delay_min,

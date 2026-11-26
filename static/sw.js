@@ -1,10 +1,11 @@
-const CACHE_NAME = "gotracker-pp-v8";
+const CACHE_NAME = "gotracker-pp-v10";
 const SHELL_ASSETS = [
   "/",
   "/static/styles.css",
   "/static/app.js",
   "/static/icons.svg",
   "/manifest.json",
+  "/static/apple-touch-icon.png",
   "/static/icon-192.png",
   "/static/icon-512.png"
 ];
