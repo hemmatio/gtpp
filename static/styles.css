@@ -898,6 +898,40 @@ html, body {
   background: var(--go-bright);
 }
 
+.advanced-summary {
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.advanced-summary::-webkit-details-marker {
+  display: none;
+}
+.advanced-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.advanced-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+.adv-chevron {
+  color: var(--muted);
+  transition: transform 0.2s ease;
+}
+.advanced-details[open] .adv-chevron {
+  transform: rotate(180deg);
+}
+.advanced-body {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

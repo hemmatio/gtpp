@@ -188,43 +188,12 @@
         </div>
 
         <div class="card">
-          <h2>Push Channels</h2>
-          <div class="subcard">
-            <div class="subcard-title">1. iOS Web Push (Home Screen PWA)</div>
-            <p class="hint" id="webpush-status-msg">Checking browser support...</p>
-            <div class="btn-row">
-              <button class="btn-small" id="btn-webpush-sub">Enable Web Push</button>
-              <button class="btn-small secondary hidden" id="btn-webpush-unsub">Unsubscribe</button>
-            </div>
-          </div>
-
-          <div class="subcard">
-            <div class="subcard-title">2. ntfy.sh (Instant iOS Push Backup)</div>
-            <p class="hint">Install the free <b>ntfy</b> iOS app and subscribe to this topic for immediate notifications.</p>
-            <div class="field">
-              <label for="chan-ntfy-topic">ntfy Topic</label>
-              <div class="input-with-btn">
-                <input type="text" id="chan-ntfy-topic" placeholder="e.g. gotracker-my-secret-topic" />
-                <button type="button" class="btn-small" id="btn-gen-ntfy">Generate</button>
-              </div>
-            </div>
-            <div class="field">
-              <label for="chan-ntfy-server">ntfy Server</label>
-              <input type="text" id="chan-ntfy-server" value="https://ntfy.sh" />
-            </div>
-          </div>
-
-          <div class="subcard">
-            <div class="subcard-title">3. Custom Webhook (Optional)</div>
-            <div class="field">
-              <label for="chan-webhook">Webhook URL (Discord / Home Assistant / Pushover)</label>
-              <input type="url" id="chan-webhook" placeholder="https://..." />
-            </div>
-          </div>
-
+          <h2>Notifications</h2>
+          <p class="hint" id="webpush-status-msg">Checking browser support...</p>
           <div class="btn-row">
-            <button class="btn-primary" id="btn-save-channels">Save Channels</button>
-            <button class="btn-secondary" id="btn-test-push">
+            <button class="btn-small" id="btn-webpush-sub">Enable Web Push</button>
+            <button class="btn-small secondary hidden" id="btn-webpush-unsub">Unsubscribe</button>
+            <button class="btn-small secondary" id="btn-test-push">
               <svg class="ico sm" width="14" height="14" aria-hidden="true"><use href="/static/icons.svg#ico-send"></use></svg>
               <span>Send Test</span>
             </button>
@@ -232,17 +201,58 @@
           <div id="push-test-result" class="status-box hidden"></div>
         </div>
 
-        <div class="card">
-          <h2>Background Location (iOS Shortcuts)</h2>
-          <p class="hint">iOS PWAs cannot run background GPS geofences directly. Use Apple <b>Shortcuts &rarr; Automation &rarr; Arrive/Leave</b> with <i>Get Contents of URL</i> to trigger your profile's private webhooks automatically.</p>
-          <div id="loc-override-status" class="pill muted">No active override</div>
-          <div class="btn-row" style="margin-top:8px;">
-            <button class="btn-small" data-zone="home" id="btn-loc-home">Simulate Home</button>
-            <button class="btn-small" data-zone="dest" id="btn-loc-dest">Simulate Dest/Union</button>
-            <button class="btn-small secondary" data-zone="clear" id="btn-loc-clear">Clear Override</button>
+        <details class="card advanced-details">
+          <summary class="advanced-summary">
+            <div class="advanced-title-wrap">
+              <span class="inline-ico">
+                <svg class="ico" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#ico-sliders-horizontal"></use></svg>
+                <b>Advanced Config</b>
+              </span>
+              <span class="advanced-sub">ntfy.sh, custom webhooks, iOS Shortcuts geofencing</span>
+            </div>
+            <svg class="ico adv-chevron" width="16" height="16" aria-hidden="true"><use href="/static/icons.svg#ico-chevron-down"></use></svg>
+          </summary>
+
+          <div class="advanced-body">
+            <div class="subcard">
+              <div class="subcard-title">ntfy.sh (Backup Push App)</div>
+              <p class="hint">Install the free <b>ntfy</b> iOS app and subscribe to this topic as a backup or custom-sound channel.</p>
+              <div class="field">
+                <label for="chan-ntfy-topic">ntfy Topic</label>
+                <div class="input-with-btn">
+                  <input type="text" id="chan-ntfy-topic" placeholder="e.g. gotracker-my-secret-topic" />
+                  <button type="button" class="btn-small" id="btn-gen-ntfy">Generate</button>
+                </div>
+              </div>
+              <div class="field" style="margin-bottom:0;">
+                <label for="chan-ntfy-server">ntfy Server</label>
+                <input type="text" id="chan-ntfy-server" value="https://ntfy.sh" />
+              </div>
+            </div>
+
+            <div class="subcard">
+              <div class="subcard-title">Custom Webhook</div>
+              <div class="field" style="margin-bottom:0;">
+                <label for="chan-webhook">Webhook URL (Discord / Home Assistant / Pushover)</label>
+                <input type="url" id="chan-webhook" placeholder="https://..." />
+              </div>
+            </div>
+
+            <button class="btn-primary" id="btn-save-channels" style="margin-bottom:12px;">Save Advanced Channels</button>
+
+            <div class="subcard" style="margin-bottom:0;">
+              <div class="subcard-title">Background Location (iOS Shortcuts)</div>
+              <p class="hint">Use Apple <b>Shortcuts &rarr; Automation &rarr; Arrive/Leave</b> with <i>Get Contents of URL</i> to trigger your profile's private webhooks automatically.</p>
+              <div id="loc-override-status" class="pill muted">No active override</div>
+              <div class="btn-row" style="margin-top:8px;">
+                <button class="btn-small" data-zone="home" id="btn-loc-home">Simulate Home</button>
+                <button class="btn-small" data-zone="dest" id="btn-loc-dest">Simulate Dest/Union</button>
+                <button class="btn-small secondary" data-zone="clear" id="btn-loc-clear">Clear Override</button>
+              </div>
+              <div class="webhook-urls" id="shortcut-urls"></div>
+            </div>
           </div>
-          <div class="webhook-urls" id="shortcut-urls"></div>
-        </div>
+        </details>
       </section>
 
       <!-- ANALYTICS TAB -->
