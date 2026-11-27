@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import math
+import re
 import struct
 import sys
 import zlib
@@ -21,7 +22,7 @@ from analytics import (
     predict_platform,
 )
 from config import DEFAULT_PORT, STATIC_DIR, TORONTO_TZ, now_toronto, today_service_date
-from db import Database
+from db import Database, hash_token
 from gotracker_client import parse_go_datetime
 from poller import TrackerPoller, evaluate_eligibility
 from webpush import VapidManager, dispatch_notification
@@ -203,7 +204,7 @@ def _active_eligibility_summary(settings: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _build_live_payload(db: Database, poller: TrackerPoller, user_id: str) -> dict[str, Any]:
+def _build_live_payload(db: Database, poller: TrackerPoller, user_id: str | None) -> dict[str, Any]:
     settings = db.get_settings(user_id)
     route = settings.get("route", {})
     catalog, _ = db.get_catalog()
@@ -426,7 +427,21 @@ async def handle_sse_stream(request: web.Request) -> web.StreamResponse:
 @routes.get("/api/me")
 async def handle_get_me(request: web.Request) -> web.Response:
     db: Database = request.app["db"]
-    user = request["user"]
+    user = request.get("user")
+    if not user:
+        return web.json_response(
+            {
+                "user": {
+                    "id": "guest",
+                    "display_name": "Commuter",
+                    "email": None,
+                    "auth_provider": "anonymous",
+                    "created_at": None,
+                },
+                "session_count": 0,
+                "counts": {"events_count": 0, "notified_count": 0, "push_subs_count": 0},
+            }
+        )
     return web.json_response(
         {
             "user": _public_user_dict(user),
@@ -461,6 +476,34 @@ async def handle_session_reset(request: web.Request) -> web.Response:
     )
     _set_session_cookie(resp, new_tok, _is_https(request))
     return resp
+
+
+@routes.post("/api/session/remove-other-devices")
+async def handle_remove_other_devices(request: web.Request) -> web.Response:
+    db: Database = request.app["db"]
+    user_id = request["user_id"]
+    keep_token_hash = request.get("session_token_hash")
+    keep_endpoint: str | None = None
+    try:
+        body = await request.json()
+        raw_ep = (body.get("keep_endpoint") or "").strip() if isinstance(body, dict) else ""
+        keep_endpoint = raw_ep or None
+    except Exception:
+        keep_endpoint = None
+
+    removed = db.revoke_other_devices(
+        user_id=user_id,
+        keep_token_hash=keep_token_hash,
+        keep_endpoint=keep_endpoint,
+    )
+    return web.json_response(
+        {
+            "status": "ok",
+            **removed,
+            "session_count": db.count_user_sessions(user_id),
+            "counts": db.get_counts(user_id),
+        }
+    )
 
 
 @routes.post("/api/session/link-code")
@@ -754,8 +797,27 @@ async def handle_events(request: web.Request) -> web.Response:
         limit = min(500, max(1, int(request.query.get("limit", "100"))))
     except ValueError:
         limit = 100
+    try:
+        offset = max(0, int(request.query.get("offset", "0")))
+    except ValueError:
+        offset = 0
+    scope = (request.query.get("scope") or "route").strip().lower()
+    if scope not in ("route", "global"):
+        scope = "route"
+    uid = request.get("user_id")
+    if scope == "route" and not uid:
+        return web.json_response(
+            {"scope": "route", "events": [], "total": 0, "limit": limit, "offset": offset, "has_more": False}
+        )
     ev_type = request.query.get("type") or None
-    return web.json_response({"events": db.list_events(user_id=request["user_id"], limit=limit, event_type=ev_type)})
+    result = db.list_events_page(
+        user_id=uid,
+        limit=limit,
+        offset=offset,
+        event_type=ev_type,
+        scope=scope,
+    )
+    return web.json_response({"scope": scope, **result})
 
 
 @routes.get("/api/analytics")
@@ -859,6 +921,26 @@ async def request_timeout_middleware(request: web.Request, handler):
         return web.json_response({"error": "Request timeout"}, status=504)
 
 
+_BOT_UA_RE = re.compile(
+    r"(bot|crawler|spider|slurp|facebookexternalhit|facebot|twitterbot|whatsapp|telegram|"
+    r"discordbot|linkedinbot|applebot|claudebot|gptbot|curl/|wget/|python-urllib|"
+    r"python-requests|go-http-client|headless)",
+    re.I,
+)
+_READ_ONLY_UNCOOKIED_PATHS = {
+    "/",
+    "/api/catalog",
+    "/api/live",
+    "/api/events",
+    "/api/analytics",
+    "/api/analytics/export",
+    "/api/settings",
+    "/api/predict/platform",
+    "/api/push/vapid-public-key",
+    "/api/stream",
+}
+
+
 @web.middleware
 async def session_middleware(request: web.Request, handler):
     path = request.path
@@ -870,17 +952,25 @@ async def session_middleware(request: web.Request, handler):
     user = db.resolve_session(raw_tok)
     new_tok: str | None = None
 
-    if path == "/api/stream":
-        request["user"] = user
-        request["user_id"] = user["id"] if user else None
-        return await handler(request)
-
     if user is None:
+        ua = request.headers.get("User-Agent", "")
+        is_readonly = request.method == "GET" and (
+            path in _READ_ONLY_UNCOOKIED_PATHS
+            or path.startswith("/api/trip/")
+            or (path == "/api/me" and bool(_BOT_UA_RE.search(ua)))
+        )
+        if is_readonly:
+            request["user"] = None
+            request["user_id"] = None
+            return await handler(request)
+
         user = db.claim_legacy_or_create_user()
-        new_tok = db.create_session(user["id"], request.headers.get("User-Agent", ""))
+        new_tok = db.create_session(user["id"], ua)
 
     request["user"] = user
     request["user_id"] = user["id"]
+    active_tok = new_tok or raw_tok
+    request["session_token_hash"] = hash_token(active_tok) if active_tok else None
 
     resp = await handler(request)
     if new_tok and SESSION_COOKIE not in resp.cookies:

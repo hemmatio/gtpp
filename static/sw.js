@@ -1,4 +1,4 @@
-const CACHE_NAME = "gotracker-pp-v10";
+const CACHE_NAME = "gotracker-pp-v25";
 const SHELL_ASSETS = [
   "/",
   "/static/styles.css",
@@ -12,9 +12,26 @@ const SHELL_ASSETS = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_ASSETS)).catch(() => {})
+    caches
+      .open(CACHE_NAME)
+      .then((cache) =>
+        Promise.all(
+          SHELL_ASSETS.map((url) =>
+            fetch(url, { cache: "no-store" })
+              .then((resp) => (resp && resp.status === 200 ? cache.put(url, resp) : null))
+              .catch(() => null)
+          )
+        )
+      )
+      .catch(() => {})
   );
   self.skipWaiting();
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener("activate", (event) => {
@@ -28,11 +45,11 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  if (event.request.method !== "GET" || url.pathname.startsWith("/api/")) {
+  if (event.request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) {
     return;
   }
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: "no-store" })
       .then((resp) => {
         if (resp && resp.status === 200) {
           const clone = resp.clone();

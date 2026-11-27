@@ -108,7 +108,6 @@ def compute_analytics(db: Database, days: int = 30, user_id: str | None = None) 
         ("T-5m", 3 * 60, 7 * 60),
     ]
     bucket_data: dict[str, list[tuple[int, int]]] = {b[0]: [] for b in buckets_spec}
-    worst_misses: dict[str, dict[str, Any]] = {}
 
     for o in outcomes:
         sched_dt = _parse_iso(o.get("scheduled_time"))
@@ -147,23 +146,6 @@ def compute_analytics(db: Database, days: int = 30, user_id: str | None = None) 
                 pred_delay = int(best_snap.get("delay_sec") or 0)
                 bucket_data[label].append((pred_delay, act_delay))
 
-                miss_sec = act_delay - pred_delay
-                t_num = o["trip_number"]
-                entry = worst_misses.setdefault(
-                    t_num,
-                    {
-                        "trip_number": t_num,
-                        "direction": o.get("direction", ""),
-                        "samples": 0,
-                        "delays": [],
-                        "worst_miss_min": 0.0,
-                    },
-                )
-                entry["samples"] += 1
-                entry["delays"].append(act_delay)
-                if miss_sec / 60.0 > entry["worst_miss_min"]:
-                    entry["worst_miss_min"] = round(miss_sec / 60.0, 1)
-
     prediction_drift = []
     for label, _, _ in buckets_spec:
         pairs = bucket_data[label]
@@ -195,73 +177,6 @@ def compute_analytics(db: Database, days: int = 30, user_id: str | None = None) 
                 "phantom_ontime_pct": phantom_pct,
             }
         )
-
-    # Top offender trips
-    trip_groups: dict[str, dict[str, Any]] = {}
-    for r in records:
-        t_num = r["trip_number"]
-        g = trip_groups.setdefault(
-            t_num,
-            {
-                "trip_number": t_num,
-                "direction": r.get("direction", ""),
-                "runs": 0,
-                "delays": [],
-                "platforms": [],
-                "lead_secs": [],
-                "sch_tracks": [],
-            },
-        )
-        g["runs"] += 1
-        if r.get("delay_sec") is not None:
-            g["delays"].append(int(r["delay_sec"]))
-        plat = str(r.get("act_track") or r.get("platform") or "").strip()
-        if plat and plat != "-":
-            g["platforms"].append(plat)
-        if r.get("platform_lead_sec") is not None and r["platform_lead_sec"] >= 0:
-            g["lead_secs"].append(int(r["platform_lead_sec"]))
-        if r.get("sch_track"):
-            g["sch_tracks"].append(str(r["sch_track"]).strip())
-
-    top_offenders = []
-    platform_patterns = []
-    for t_num, g in trip_groups.items():
-        d_list = g["delays"]
-        avg_d = round(statistics.mean(d_list) / 60.0, 1) if d_list else 0.0
-        max_d = round(max(d_list) / 60.0, 1) if d_list else 0.0
-        miss_info = worst_misses.get(t_num, {})
-        top_offenders.append(
-            {
-                "trip_number": t_num,
-                "direction": g["direction"],
-                "runs": g["runs"],
-                "avg_delay_min": avg_d,
-                "max_delay_min": max_d,
-                "worst_miss_min": miss_info.get("worst_miss_min"),
-            }
-        )
-
-        if g["platforms"]:
-            freq: dict[str, int] = {}
-            for p in g["platforms"]:
-                freq[p] = freq.get(p, 0) + 1
-            best_plat, best_cnt = max(freq.items(), key=lambda x: x[1])
-            consistency = round(100.0 * best_cnt / len(g["platforms"]), 0)
-            avg_lead = round(statistics.mean(g["lead_secs"]) / 60.0, 1) if g["lead_secs"] else None
-            platform_patterns.append(
-                {
-                    "trip_number": t_num,
-                    "direction": g["direction"],
-                    "most_common_platform": best_plat,
-                    "consistency_pct": consistency,
-                    "samples": len(g["platforms"]),
-                    "avg_lead_min": avg_lead,
-                    "sch_track": g["sch_tracks"][-1] if g["sch_tracks"] else "",
-                }
-            )
-
-    top_offenders.sort(key=lambda x: (x["avg_delay_min"], x["max_delay_min"]), reverse=True)
-    platform_patterns.sort(key=lambda x: (x["samples"], x["consistency_pct"]), reverse=True)
 
     # Hourly delay breakdown
     hourly: dict[int, list[int]] = {}
@@ -299,8 +214,6 @@ def compute_analytics(db: Database, days: int = 30, user_id: str | None = None) 
             "sch_track_match_pct": sch_track_match_pct,
         },
         "prediction_drift": prediction_drift,
-        "top_offenders": top_offenders[:15],
-        "platform_patterns": platform_patterns[:15],
         "hourly_breakdown": hourly_breakdown,
     }
 

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from config import DB_PATH, TORONTO_TZ, now_toronto, today_service_date
+from config import DB_PATH, MINOR_DELAY_SEC, TORONTO_TZ, now_toronto, today_service_date
 
 
 def _default_settings() -> dict[str, Any]:
@@ -71,9 +71,13 @@ def hash_token(raw_token: str) -> str:
 
 
 def _snapshot_state_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    d_sec = int(row.get("delay_sec") or 0)
+    # Bucket sub-30s prediction jitter while always splitting across the On-Time threshold
+    d_bucket = round(d_sec / 30.0)
+    is_late_minor = 1 if d_sec >= MINOR_DELAY_SEC else 0
     return (
-        str(row.get("predicted_time") or ""),
-        int(row.get("delay_sec") or 0),
+        d_bucket,
+        is_late_minor,
         str(row.get("platform") or "-").strip() or "-",
         str(row.get("sch_track") or "").strip(),
         str(row.get("info_status") or "").strip(),
@@ -81,6 +85,23 @@ def _snapshot_state_key(row: dict[str, Any]) -> tuple[Any, ...]:
         row.get("coach_count"),
         row.get("scheduled_coach_count"),
     )
+
+
+def _is_default_guest_settings(settings: dict[str, Any]) -> bool:
+    defaults = _default_settings()
+    if settings.get("route") != defaults["route"]:
+        return False
+    ch = settings.get("channels") or {}
+    if (ch.get("ntfy_topic") or "").strip() or (ch.get("webhook_url") or "").strip():
+        return False
+    loc = settings.get("location_state") or {}
+    if loc.get("override_direction"):
+        return False
+    if settings.get("alert_prefs") != defaults["alert_prefs"]:
+        return False
+    if settings.get("rules") != defaults["rules"]:
+        return False
+    return True
 
 
 class Database:
@@ -451,6 +472,40 @@ class Database:
         with self.connect() as conn:
             conn.execute("DELETE FROM sessions WHERE token_hash = ?", (hash_token(raw_token),))
 
+    def revoke_other_devices(
+        self,
+        user_id: str,
+        keep_token_hash: str | None = None,
+        keep_endpoint: str | None = None,
+    ) -> dict[str, int]:
+        """Remove all other sessions, push subscriptions, and pending link codes tied strictly to user_id."""
+        with self.connect() as conn:
+            if keep_token_hash:
+                sess_cur = conn.execute(
+                    "DELETE FROM sessions WHERE user_id = ? AND token_hash != ?",
+                    (user_id, keep_token_hash),
+                )
+            else:
+                sess_cur = conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+
+            if keep_endpoint:
+                sub_cur = conn.execute(
+                    "DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint != ?",
+                    (user_id, keep_endpoint),
+                )
+            else:
+                sub_cur = conn.execute(
+                    "DELETE FROM push_subscriptions WHERE user_id = ?",
+                    (user_id,),
+                )
+
+            link_cur = conn.execute("DELETE FROM link_codes WHERE user_id = ?", (user_id,))
+        return {
+            "sessions_removed": int(sess_cur.rowcount or 0),
+            "push_subs_removed": int(sub_cur.rowcount or 0),
+            "link_codes_removed": int(link_cur.rowcount or 0),
+        }
+
     def count_user_sessions(self, user_id: str) -> int:
         with self.connect() as conn:
             return int(conn.execute("SELECT COUNT(*) FROM sessions WHERE user_id = ?", (user_id,)).fetchone()[0])
@@ -512,26 +567,30 @@ class Database:
             )
 
     # ---- Per-User Settings ----
-    def get_settings(self, user_id: str) -> dict[str, Any]:
-        defaults = _default_settings()
+    def _merge_user_settings_rows(self, rows: list[sqlite3.Row]) -> dict[str, Any]:
+        out = _default_settings()
+        for row in rows:
+            try:
+                loaded = json.loads(row["value_json"])
+                if isinstance(out.get(row["key"]), dict) and isinstance(loaded, dict):
+                    merged = dict(out[row["key"]])
+                    merged.update(loaded)
+                    out[row["key"]] = merged
+                else:
+                    out[row["key"]] = loaded
+            except Exception:
+                pass
+        return out
+
+    def get_settings(self, user_id: str | None) -> dict[str, Any]:
+        if not user_id:
+            return _default_settings()
         with self.connect() as conn:
             rows = conn.execute(
                 "SELECT key, value_json FROM user_settings WHERE user_id = ?",
                 (user_id,),
             ).fetchall()
-            out = dict(defaults)
-            for row in rows:
-                try:
-                    loaded = json.loads(row["value_json"])
-                    if isinstance(out.get(row["key"]), dict) and isinstance(loaded, dict):
-                        merged = dict(out[row["key"]])
-                        merged.update(loaded)
-                        out[row["key"]] = merged
-                    else:
-                        out[row["key"]] = loaded
-                except Exception:
-                    pass
-            return out
+            return self._merge_user_settings_rows(rows)
 
     def update_settings(self, user_id: str, updates: dict[str, Any]) -> dict[str, Any]:
         now_iso = now_toronto().isoformat()
@@ -576,17 +635,78 @@ class Database:
         return None
 
     def list_active_users_with_settings(self, active_days: int = 30) -> list[dict[str, Any]]:
-        cutoff = (now_toronto() - timedelta(days=active_days)).isoformat()
+        now = now_toronto()
+        cutoff = (now - timedelta(days=active_days)).isoformat()
+        recent_cutoff_dt = now - timedelta(hours=48)
         with self.connect() as conn:
-            rows = conn.execute(
+            user_rows = conn.execute(
                 """
-                SELECT DISTINCT u.id FROM users u
+                SELECT u.id, u.last_seen_at,
+                       MAX(CASE WHEN ps.user_id IS NOT NULL THEN 1 ELSE 0 END) AS has_push
+                FROM users u
                 LEFT JOIN push_subscriptions ps ON ps.user_id = u.id
                 WHERE u.last_seen_at >= ? OR ps.user_id IS NOT NULL
+                GROUP BY u.id
                 """,
                 (cutoff,),
             ).fetchall()
-        return [{"user_id": r["id"], "settings": self.get_settings(r["id"])} for r in rows]
+            if not user_rows:
+                return []
+
+            uids = [r["id"] for r in user_rows]
+            by_uid: dict[str, list[sqlite3.Row]] = {uid: [] for uid in uids}
+            for i in range(0, len(uids), 500):
+                chunk = uids[i : i + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                s_rows = conn.execute(
+                    f"SELECT user_id, key, value_json FROM user_settings WHERE user_id IN ({placeholders})",
+                    tuple(chunk),
+                ).fetchall()
+                for sr in s_rows:
+                    by_uid.setdefault(sr["user_id"], []).append(sr)
+
+        result: list[dict[str, Any]] = []
+        for ur in user_rows:
+            uid = ur["id"]
+            has_push = bool(ur["has_push"])
+            settings = self._merge_user_settings_rows(by_uid.get(uid, []))
+            ch = settings.get("channels") or {}
+            loc = settings.get("location_state") or {}
+            has_override = False
+            if loc.get("override_direction") and loc.get("expires_at"):
+                try:
+                    exp_dt = datetime.fromisoformat(loc["expires_at"])
+                    if exp_dt.tzinfo is None:
+                        exp_dt = exp_dt.replace(tzinfo=TORONTO_TZ)
+                    has_override = now < exp_dt
+                except Exception:
+                    has_override = False
+            has_target = bool(
+                has_push
+                or (ch.get("ntfy_topic") or "").strip()
+                or (ch.get("webhook_url") or "").strip()
+                or has_override
+            )
+            recent_browser = False
+            try:
+                seen_dt = datetime.fromisoformat(ur["last_seen_at"])
+                if seen_dt.tzinfo is None:
+                    seen_dt = seen_dt.replace(tzinfo=TORONTO_TZ)
+                recent_browser = seen_dt >= recent_cutoff_dt
+            except Exception:
+                recent_browser = False
+
+            result.append(
+                {
+                    "user_id": uid,
+                    "settings": settings,
+                    "has_push": has_push,
+                    "has_notification_target": has_target,
+                    "has_custom_settings": not _is_default_guest_settings(settings),
+                    "recent_browser": recent_browser,
+                }
+            )
+        return result
 
     # ---- Push Subscriptions ----
     def save_push_subscription(
@@ -877,9 +997,20 @@ class Database:
     def insert_snapshot(self, snap: dict[str, Any]) -> None:
         self.record_snapshot(snap)
 
-    def compact_snapshots(self, max_age_days: int = 180, vacuum: bool = False) -> dict[str, Any]:
-        """Prune snapshots older than max_age_days and merge consecutive identical-state rows."""
-        cutoff = (now_toronto() - timedelta(days=max_age_days)).strftime("%Y-%m-%d")
+    def compact_snapshots(
+        self,
+        max_age_days: int = 180,
+        events_max_age_days: int = 60,
+        guest_max_age_days: int = 7,
+        vacuum: bool = False,
+    ) -> dict[str, Any]:
+        """Prune old snapshots/events/stale guests, merge consecutive identical-state snapshots, and truncate WAL."""
+        now = now_toronto()
+        now_iso = now.isoformat()
+        cutoff = (now - timedelta(days=max_age_days)).strftime("%Y-%m-%d")
+        ev_cutoff = (now - timedelta(days=events_max_age_days)).isoformat()
+        guest_cutoff = (now - timedelta(days=guest_max_age_days)).isoformat()
+
         with self.connect() as conn:
             rows_before = int(conn.execute("SELECT COUNT(*) FROM trip_snapshots").fetchone()[0])
             del_cur = conn.execute("DELETE FROM trip_snapshots WHERE service_date < ?", (cutoff,))
@@ -943,11 +1074,82 @@ class Database:
 
             rows_after = int(conn.execute("SELECT COUNT(*) FROM trip_snapshots").fetchone()[0])
 
+            # Prune expired sessions/link codes, old events, stale default guests, and orphan rows
+            conn.execute("DELETE FROM sessions WHERE expires_at < ?", (now_iso,))
+            conn.execute("DELETE FROM link_codes WHERE expires_at < ?", (now_iso,))
+            events_pruned = int(
+                conn.execute("DELETE FROM events WHERE created_at < ?", (ev_cutoff,)).rowcount or 0
+            )
+
+            # Prune stale untouched guest users inactive >= guest_max_age_days
+            cand_rows = conn.execute(
+                """
+                SELECT u.id FROM users u
+                WHERE u.id != 'usr_legacy_0'
+                  AND u.display_name = 'Commuter'
+                  AND u.last_seen_at < ?
+                  AND NOT EXISTS (SELECT 1 FROM push_subscriptions ps WHERE ps.user_id = u.id)
+                  AND NOT EXISTS (SELECT 1 FROM link_codes lc WHERE lc.user_id = u.id)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM events e WHERE e.user_id = u.id
+                      AND e.event_type IN ('test_notification', 'location_change')
+                  )
+                """,
+                (guest_cutoff,),
+            ).fetchall()
+            prune_uids: list[str] = []
+            if cand_rows:
+                cand_ids = [r["id"] for r in cand_rows]
+                settings_by_uid: dict[str, list[sqlite3.Row]] = {uid: [] for uid in cand_ids}
+                for i in range(0, len(cand_ids), 500):
+                    chunk = cand_ids[i : i + 500]
+                    placeholders = ",".join("?" for _ in chunk)
+                    for sr in conn.execute(
+                        f"SELECT user_id, key, value_json FROM user_settings WHERE user_id IN ({placeholders})",
+                        tuple(chunk),
+                    ).fetchall():
+                        settings_by_uid.setdefault(sr["user_id"], []).append(sr)
+                for uid in cand_ids:
+                    if _is_default_guest_settings(self._merge_user_settings_rows(settings_by_uid.get(uid, []))):
+                        prune_uids.append(uid)
+
+            users_pruned = 0
+            for i in range(0, len(prune_uids), 500):
+                chunk = prune_uids[i : i + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                events_pruned += int(
+                    conn.execute(f"DELETE FROM events WHERE user_id IN ({placeholders})", chunk).rowcount or 0
+                )
+                users_pruned += int(
+                    conn.execute(f"DELETE FROM users WHERE id IN ({placeholders})", chunk).rowcount or 0
+                )
+
+            orphans_cleaned = 0
+            orphans_cleaned += int(
+                conn.execute("DELETE FROM user_settings WHERE user_id NOT IN (SELECT id FROM users)").rowcount or 0
+            )
+            orphans_cleaned += int(
+                conn.execute("DELETE FROM sessions WHERE user_id NOT IN (SELECT id FROM users)").rowcount or 0
+            )
+            orphans_cleaned += int(
+                conn.execute(
+                    """
+                    DELETE FROM events
+                    WHERE user_id IS NOT NULL
+                      AND user_id != '__global__'
+                      AND user_id NOT IN (SELECT id FROM users)
+                      AND user_id NOT IN (SELECT user_id FROM push_subscriptions WHERE user_id IS NOT NULL)
+                    """
+                ).rowcount
+                or 0
+            )
+
         merged_count = len(delete_ids)
+        total_cleaned = merged_count + pruned_old_count + events_pruned + users_pruned + orphans_cleaned
         maint_conn = sqlite3.connect(self.db_path, timeout=15.0, isolation_level=None)
         try:
             maint_conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
-            if vacuum or merged_count >= 50 or pruned_old_count >= 50:
+            if vacuum or total_cleaned >= 50:
                 maint_conn.execute("VACUUM;")
                 maint_conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
         finally:
@@ -958,6 +1160,9 @@ class Database:
             "rows_after": rows_after,
             "merged_count": merged_count,
             "pruned_old_count": pruned_old_count,
+            "events_pruned": events_pruned,
+            "users_pruned": users_pruned,
+            "orphans_cleaned": orphans_cleaned,
             "db_size_kb": self.get_db_size_kb(),
         }
 
@@ -1096,35 +1301,144 @@ class Database:
                     pass
             return False
 
+    def has_global_event(
+        self,
+        service_date: str,
+        trip_number: str,
+        station_code: str,
+        event_type: str,
+        dedup_value: str | None = None,
+    ) -> bool:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT payload_json FROM events
+                WHERE user_id = '__global__' AND service_date = ? AND trip_number = ?
+                  AND COALESCE(station_code, '') = ? AND event_type = ?
+                """,
+                (service_date, trip_number, station_code or "", event_type),
+            ).fetchall()
+            if not rows:
+                return False
+            if dedup_value is None:
+                return True
+            for r in rows:
+                if not r["payload_json"]:
+                    continue
+                try:
+                    payload = json.loads(r["payload_json"])
+                    if str(payload.get("dedup_key", "")) == str(dedup_value):
+                        return True
+                except Exception:
+                    pass
+            return False
+
+    def list_events_page(
+        self,
+        user_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        event_type: str | None = None,
+        scope: str = "route",
+        include_total: bool = True,
+    ) -> dict[str, Any]:
+        limit = max(1, int(limit))
+        offset = max(0, int(offset))
+        clauses = []
+        params: list[Any] = []
+        if scope == "global":
+            clauses.append("event_type NOT IN ('test_notification', 'location_change')")
+        elif user_id:
+            clauses.append("user_id = ?")
+            params.append(user_id)
+        else:
+            clauses.append("COALESCE(user_id, '') != '__global__'")
+        if event_type:
+            clauses.append("event_type = ?")
+            params.append(event_type)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self.connect() as conn:
+            if scope == "global":
+                caller_uid = user_id if user_id and user_id != "__global__" else ""
+                cte_sql = f"""
+                    WITH deduped AS (
+                        SELECT * FROM (
+                            SELECT *,
+                                   ROW_NUMBER() OVER (
+                                       PARTITION BY service_date,
+                                                    COALESCE(NULLIF(trip_number, ''), CAST(id AS TEXT)),
+                                                    event_type,
+                                                    COALESCE(station_code, ''),
+                                                    title
+                                       ORDER BY (CASE
+                                                     WHEN ? != '' AND user_id = ? THEN 0
+                                                     WHEN user_id = '__global__' THEN 1
+                                                     ELSE 2
+                                                 END) ASC,
+                                                notified DESC,
+                                                created_at DESC,
+                                                id DESC
+                                   ) AS _rn
+                            FROM events
+                            {where}
+                        )
+                        WHERE _rn = 1
+                    )
+                """
+                base_params = [caller_uid, caller_uid, *params]
+                total = (
+                    int(conn.execute(f"{cte_sql} SELECT COUNT(*) FROM deduped", tuple(base_params)).fetchone()[0])
+                    if include_total
+                    else 0
+                )
+                rows = conn.execute(
+                    f"{cte_sql} SELECT * FROM deduped ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+                    tuple([*base_params, limit, offset]),
+                ).fetchall()
+            else:
+                total = (
+                    int(conn.execute(f"SELECT COUNT(*) FROM events {where}", tuple(params)).fetchone()[0])
+                    if include_total
+                    else 0
+                )
+                rows = conn.execute(
+                    f"SELECT * FROM events {where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+                    tuple([*params, limit, offset]),
+                ).fetchall()
+            out = []
+            for r in rows:
+                d = dict(r)
+                d.pop("_rn", None)
+                d["notified"] = bool(d["notified"])
+                d["channel_results"] = json.loads(d.pop("channel_results_json") or "null")
+                d["payload"] = json.loads(d.pop("payload_json") or "null")
+                out.append(d)
+            if not include_total:
+                total = offset + len(out)
+            return {
+                "events": out,
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "has_more": (offset + len(out)) < total,
+            }
+
     def list_events(
         self,
         user_id: str | None = None,
         limit: int = 100,
         event_type: str | None = None,
+        scope: str = "route",
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
-        clauses = []
-        params: list[Any] = []
-        if user_id:
-            clauses.append("user_id = ?")
-            params.append(user_id)
-        if event_type:
-            clauses.append("event_type = ?")
-            params.append(event_type)
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        params.append(limit)
-        with self.connect() as conn:
-            rows = conn.execute(
-                f"SELECT * FROM events {where} ORDER BY created_at DESC, id DESC LIMIT ?",
-                tuple(params),
-            ).fetchall()
-            out = []
-            for r in rows:
-                d = dict(r)
-                d["notified"] = bool(d["notified"])
-                d["channel_results"] = json.loads(d.pop("channel_results_json") or "null")
-                d["payload"] = json.loads(d.pop("payload_json") or "null")
-                out.append(d)
-            return out
+        return self.list_events_page(
+            user_id=user_id,
+            limit=limit,
+            offset=offset,
+            event_type=event_type,
+            scope=scope,
+            include_total=False,
+        )["events"]
 
     def get_counts(self, user_id: str | None = None) -> dict[str, int]:
         with self.connect() as conn:

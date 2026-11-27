@@ -297,6 +297,9 @@ class TrackerPoller:
         self._last_compact_ts: float = 0.0
         self._catalog_mem: dict[str, Any] | None = None
         self._catalog_ts: float = 0.0
+        self._global_prev_map: dict[tuple[str, str, str], dict[str, Any]] = {}
+        self._global_service_date: str = ""
+        self._global_emitted: set[tuple[str, str, str, str, str]] = set()
 
     def start(self) -> None:
         if not self._running:
@@ -462,11 +465,15 @@ class TrackerPoller:
                     pair for pair in sorted(msg_targets)
                     if (now_mono - self._msg_fetch_ts.get(pair, 0.0)) > STATION_MSG_REFRESH_SEC
                 ]
+                all_corridors = [c.get("code") for c in (catalog or {}).get("corridors", []) if c.get("code")]
+                global_un_corridors = [c for c in all_corridors if (c, "UN") not in signage_targets]
 
                 tasks = (
                     [fetch_station_signage(self.session, c, s) for c, s in signage_list]
                     + [fetch_union_departures(self.session, s, n) for _, s, n in union_list]
                     + [fetch_station_messages(self.session, c, s) for c, s in msg_list]
+                    + [fetch_union_departures(self.session, "UN", "Union")]
+                    + [fetch_station_signage(self.session, c, "UN") for c in global_un_corridors]
                 )
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -499,6 +506,14 @@ class TrackerPoller:
                     if not isinstance(res, Exception):
                         self.db.save_station_messages(c, s, res)
                         self._msg_fetch_ts[(c, s)] = now_mono
+
+                global_union_raw = results[idx]
+                idx += 1
+                global_union_deps = [] if isinstance(global_union_raw, Exception) else (global_union_raw or [])
+                for c in global_un_corridors:
+                    res = results[idx]
+                    idx += 1
+                    signage_map[(c, "UN")] = {"Inbound": [], "Outbound": []} if isinstance(res, Exception) else res
 
                 if signage_list and union_list and signage_errors == len(signage_list) and union_errors == len(union_list):
                     raise RuntimeError("All upstream GOTracker requests failed")
@@ -788,10 +803,17 @@ class TrackerPoller:
                         )
                         self._last_snapshot_ts[snap_key] = now_mono
 
-                    # Per-user alert evaluation for users tracking this leg
+                    # Per-user alert evaluation (skip stale passive guests without channels/custom settings)
                     for u in active_users:
                         u_id = u["user_id"]
                         if not u_id:
+                            continue
+                        if not (
+                            u_id == "usr_legacy_0"
+                            or u.get("has_notification_target")
+                            or u.get("has_custom_settings")
+                            or u.get("recent_browser")
+                        ):
                             continue
                         u_settings = u["settings"]
                         u_route = u_settings.get("route", {})
@@ -864,6 +886,170 @@ class TrackerPoller:
                             )
 
                     self.db.upsert_live_departure(row)
+
+                # Network-wide event monitor across ALL GO Rail lines and Union platforms
+                if self._global_service_date != service_date:
+                    self._global_service_date = service_date
+                    self._global_prev_map.clear()
+                    self._global_emitted.clear()
+
+                corr_by_name = {
+                    (c.get("name") or "").strip().lower(): c.get("code")
+                    for c in (catalog or {}).get("corridors", [])
+                    if c.get("code") and c.get("name")
+                }
+                un_signage_by_trip: dict[str, tuple[str, dict[str, Any]]] = {}
+                for c in all_corridors:
+                    sig = signage_map.get((c, "UN"), {})
+                    for dir_bucket in ("Outbound", "Inbound"):
+                        for it in sig.get(dir_bucket, []):
+                            t_num = str(it.get("trip_number") or "").strip()
+                            if t_num and t_num not in un_signage_by_trip:
+                                un_signage_by_trip[t_num] = (c, it)
+
+                global_rows: dict[tuple[str, str, str], dict[str, Any]] = {}
+                for item in global_union_deps:
+                    t_num = str(item.get("trip_number") or "").strip()
+                    if not t_num:
+                        continue
+                    svc_name = str(item.get("service") or "").strip()
+                    corr_code = corr_by_name.get(svc_name.lower(), "")
+                    sig_pair = un_signage_by_trip.get(t_num)
+                    ob = sig_pair[1] if sig_pair else None
+                    if not corr_code and sig_pair:
+                        corr_code = sig_pair[0]
+                    delay_sec = item.get("delay_sec") or 0
+                    pred_time = item.get("predicted_time")
+                    is_cancelled = bool(item.get("is_cancelled"))
+                    if ob and (ob.get("delay_sec") or 0) > delay_sec and delay_sec == 0:
+                        delay_sec = ob["delay_sec"]
+                        s_dt = parse_go_datetime(item.get("scheduled_time"), now)
+                        if s_dt:
+                            pred_time = (s_dt + timedelta(seconds=delay_sec)).isoformat()
+                    if ob and ob.get("is_cancelled"):
+                        is_cancelled = True
+                    stops_list = item.get("stops") or []
+                    dest_label = str(stops_list[-1]).strip() if stops_list else (svc_name or "Terminus")
+                    if dest_label.lower() == "express to" and svc_name:
+                        dest_label = svc_name
+                    if dest_label.lower() in ("union", "union station"):
+                        g_orig = svc_name or "Inbound"
+                        g_dest = "UN"
+                    else:
+                        g_orig = "UN"
+                        g_dest = dest_label
+                    global_rows[(service_date, t_num, "UN")] = {
+                        "service_date": service_date,
+                        "trip_number": t_num,
+                        "origin_code": g_orig,
+                        "dest_code": g_dest,
+                        "station_code": "UN",
+                        "corridor": corr_code,
+                        "scheduled_time": item["scheduled_time"],
+                        "predicted_time": pred_time,
+                        "delay_sec": delay_sec,
+                        "platform": item.get("platform") or "-",
+                        "info_status": item.get("info_status") or "",
+                        "is_cancelled": is_cancelled,
+                        "coach_count": item.get("coach_count"),
+                        "scheduled_coach_count": item.get("scheduled_coach_count"),
+                    }
+
+                for c_code, sig_item in un_signage_by_trip.values():
+                    t_num = sig_item["trip_number"]
+                    g_key = (service_date, t_num, "UN")
+                    if g_key not in global_rows:
+                        global_rows[g_key] = {
+                            "service_date": service_date,
+                            "trip_number": t_num,
+                            "origin_code": "UN",
+                            "dest_code": sig_item.get("destination") or c_code,
+                            "corridor": c_code,
+                            "scheduled_time": sig_item["scheduled_time"],
+                            "predicted_time": sig_item["predicted_time"],
+                            "delay_sec": sig_item.get("delay_sec") or 0,
+                            "platform": sig_item.get("platform") or "-",
+                            "info_status": sig_item.get("info_status") or "",
+                            "is_cancelled": bool(sig_item.get("is_cancelled")),
+                            "coach_count": sig_item.get("coach_count"),
+                            "scheduled_coach_count": sig_item.get("scheduled_coach_count"),
+                        }
+
+                for row in normalized_rows:
+                    if row["origin_code"] != "UN":
+                        g_key = (service_date, row["trip_number"], row["origin_code"])
+                        global_rows[g_key] = row
+
+                global_prefs = {"delay_threshold_min": 3, "delay_change_step_min": 3}
+                for g_key, g_row in global_rows.items():
+                    old_g = self._global_prev_map.get(g_key)
+                    g_stat = g_row.get("station_code") or g_row["origin_code"]
+                    g_events = detect_trip_events(old_g, g_row, global_prefs, now)
+                    # On initial observation of an active train (e.g. startup), also log current platform/boarding/delay once
+                    if old_g is None:
+                        s_dt = parse_go_datetime(g_row.get("scheduled_time"), now)
+                        if s_dt is None or s_dt >= now - timedelta(minutes=15):
+                            s_hhmm = s_dt.strftime("%H:%M") if s_dt else ""
+                            r_lbl = f"{g_row['origin_code']} → {g_row['dest_code']}"
+                            g_plat = (g_row.get("platform") or "-").strip() or "-"
+                            g_info = (g_row.get("info_status") or "").strip()
+                            g_delay = int(g_row.get("delay_sec") or 0)
+                            if g_plat not in ("", "-"):
+                                g_events.append(
+                                    {
+                                        "event_type": "platform_announced",
+                                        "title": f"Platform {g_plat} • Train {g_row['trip_number']}",
+                                        "body": f"{r_lbl} ({s_hhmm}) assigned to Platform {g_plat}.",
+                                        "dedup_key": g_plat,
+                                    }
+                                )
+                            if "proceed" in g_info.lower():
+                                g_events.append(
+                                    {
+                                        "event_type": "boarding_proceed",
+                                        "title": f"Boarding Now • Train {g_row['trip_number']}",
+                                        "body": f"{r_lbl} ({s_hhmm}) is Proceed/Boarding" + (f" on Platform {g_plat}" if g_plat not in ("", "-") else "") + ".",
+                                        "dedup_key": "proceed",
+                                    }
+                                )
+                            if g_delay >= 180:
+                                mins = max(1, round(g_delay / 60))
+                                g_events.append(
+                                    {
+                                        "event_type": "delay_started",
+                                        "title": f"Delayed +{mins}m • Train {g_row['trip_number']}",
+                                        "body": f"{r_lbl} ({s_hhmm}) is now running ~{mins} min late.",
+                                        "dedup_key": f"start_{mins}",
+                                    }
+                                )
+                    for ev in g_events:
+                        dedup_val = str(ev.get("dedup_key") or ev["title"])
+                        emit_key = (service_date, g_row["trip_number"], g_stat, ev["event_type"], dedup_val)
+                        if emit_key in self._global_emitted:
+                            continue
+                        if self.db.has_global_event(service_date, g_row["trip_number"], g_stat, ev["event_type"], ev.get("dedup_key")):
+                            self._global_emitted.add(emit_key)
+                            continue
+                        self._global_emitted.add(emit_key)
+                        self.db.insert_event(
+                            {
+                                "created_at": now.isoformat(),
+                                "user_id": "__global__",
+                                "service_date": service_date,
+                                "trip_number": g_row["trip_number"],
+                                "corridor": g_row.get("corridor", ""),
+                                "station_code": g_stat,
+                                "direction": f"{g_row['origin_code']}->{g_row['dest_code']}",
+                                "event_type": ev["event_type"],
+                                "title": ev["title"],
+                                "body": ev["body"],
+                                "notified": False,
+                                "rule_matched": None,
+                                "channel_results": None,
+                                "payload": {"dedup_key": ev.get("dedup_key")},
+                            }
+                        )
+                    self._global_prev_map[g_key] = g_row
 
                 yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
                 self.db.prune_stale_live_departures(yesterday)

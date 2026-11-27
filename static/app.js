@@ -15,9 +15,117 @@
     sseConnected: false,
     fetchError: null,
     predictorInited: false,
+    predLoaded: false,
+    analyticsLoaded: false,
+    eventsLoaded: false,
+    systemLoaded: false,
+    eventsPage: 1,
+    eventsTotalPages: 1,
+    eventsReqSeq: 0,
   };
 
+  const EVENTS_PAGE_SIZE = 20;
   const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  function predictorSkeletonHtml() {
+    const row = `<div class="cand-row"><b><span class="skel" style="width:56px">&nbsp;</span></b><div class="cand-bar"><div class="skel skel-bar"></div></div><span><span class="skel" style="width:56px">&nbsp;</span></span></div>`;
+    return `
+      <div class="pred-hero">
+        <div>
+          <div class="endpoint-label">Most likely track</div>
+          <div class="pred-plat-big"><span class="skel skel-lg" style="width:144px">&nbsp;</span></div>
+        </div>
+        <span class="pill muted skel" style="width:118px">&nbsp;</span>
+      </div>
+      <div class="hint mt-8 mb-0"><span class="skel" style="width:210px">&nbsp;</span></div>
+      <div class="pred-cands">${row}${row}${row}</div>
+    `;
+  }
+
+  function eventsSkeletonHtml(count = 6) {
+    const widths = [
+      [154, 210, 168],
+      [142, 196, 160],
+      [166, 220, 176],
+      [148, 204, 164],
+      [158, 212, 170],
+      [144, 190, 158],
+    ];
+    return Array.from({ length: count }, (_, idx) => {
+      const [w1, w2, w3] = widths[idx % widths.length];
+      return `<div class="event-row"><div class="event-head"><span class="skel" style="width:${w1}px">&nbsp;</span><span class="pill muted skel" style="width:54px">&nbsp;</span></div><div><span class="skel" style="width:${w2}px">&nbsp;</span></div><div class="event-meta"><span class="skel" style="width:${w3}px">&nbsp;</span></div></div>`;
+    }).join("");
+  }
+
+  function renderBoardSkeleton() {
+    $("route-card").setAttribute("aria-busy", "true");
+    const codeEl = $("board-line-code");
+    codeEl.className = "line-badge skel";
+    codeEl.setAttribute("aria-hidden", "true");
+    codeEl.innerHTML = "&nbsp;";
+    $("board-line-name").innerHTML = `<span class="skel" style="width:104px">&nbsp;</span>`;
+    const badgeEl = $("alert-armed-badge");
+    badgeEl.className = "pill muted skel";
+    badgeEl.style.width = "122px";
+    badgeEl.innerHTML = "&nbsp;";
+    $("board-from-name").innerHTML = `<span class="skel" style="width:120px">&nbsp;</span>`;
+    $("board-to-name").innerHTML = `<span class="skel" style="width:120px">&nbsp;</span>`;
+
+    const rowWidths = [116, 108, 120, 104];
+    const depRows = rowWidths
+      .map(
+        (w) => `<div class="dep-row"><div class="dep-trigger"><div class="dep-main"><div class="dep-times"><span class="dep-sched"><span class="skel" style="width:52px">&nbsp;</span></span><span class="dep-countdown"><span class="skel" style="width:44px">&nbsp;</span></span></div><div class="dep-right"><div class="plat-badge skel">&nbsp;</div><span class="ico sm" aria-hidden="true"></span></div></div><div class="dep-sub"><span class="pill muted skel" style="width:66px">&nbsp;</span><span class="train-num"><span class="skel" style="width:${w}px">&nbsp;</span></span></div></div></div>`
+      )
+      .join("");
+    const listEl = $("departures-list");
+    listEl.setAttribute("aria-busy", "true");
+    listEl.innerHTML = `
+      <div class="hero-dep skel-card">
+        <div class="dep-trigger">
+          <div class="hero-top">
+            <div>
+              <div class="hero-kicker"><span class="skel" style="width:88px">&nbsp;</span></div>
+              <div class="hero-countdown"><span class="skel skel-lg" style="width:116px">&nbsp;</span></div>
+            </div>
+            <div class="dep-right">
+              <div class="plat-badge skel">&nbsp;</div>
+              <span class="ico sm" aria-hidden="true"></span>
+            </div>
+          </div>
+          <div class="hero-sub">
+            <span class="hero-time"><span class="skel" style="width:48px">&nbsp;</span></span>
+            <span class="pill muted skel" style="width:66px">&nbsp;</span>
+            <span class="train-num"><span class="skel" style="width:110px">&nbsp;</span></span>
+          </div>
+        </div>
+      </div>
+      <div class="dep-group skel-card">
+        <div class="dep-group-head"><span class="skel" style="width:68px">&nbsp;</span></div>
+        ${depRows}
+      </div>
+      <div class="earlier-details skel-card">
+        <div class="earlier-summary"><span class="skel" style="width:112px">&nbsp;</span><span class="ico sm" aria-hidden="true"></span></div>
+      </div>
+    `;
+  }
+
+  function showBoardOfflineFallback() {
+    $("route-card").removeAttribute("aria-busy");
+    const codeEl = $("board-line-code");
+    codeEl.className = "line-badge";
+    codeEl.removeAttribute("aria-hidden");
+    codeEl.textContent = "GO";
+    $("board-line-name").textContent = "Offline";
+    const badgeEl = $("alert-armed-badge");
+    badgeEl.style.width = "";
+    badgeEl.className = "pill muted";
+    badgeEl.textContent = "Unavailable";
+    $("board-from-name").textContent = "--";
+    $("board-to-name").textContent = "--";
+    const listEl = $("departures-list");
+    listEl.removeAttribute("aria-busy");
+    listEl.innerHTML = `<div class="empty-state">Unable to load live departures. Check connection and tap Retry.</div>`;
+  }
 
   const CORRIDOR_COLORS = {
     ST: "#8f5624",
@@ -188,7 +296,9 @@
     }
 
     if (!poller || !poller.last_poll_at) {
-      label.textContent = "Connecting...";
+      if (state.live) {
+        label.textContent = "Connecting...";
+      }
       banner.className = "conn-banner hidden";
       return;
     }
@@ -262,8 +372,13 @@
     const activeCorr = isH2D ? route.home_corridor : route.dest_corridor;
     const lineCode = activeCorr || route.home_corridor || "GO";
     const lineColor = CORRIDOR_COLORS[lineCode] || "#248a3d";
-    $("route-card").style.setProperty("--line-color", lineColor);
-    $("board-line-code").textContent = lineCode;
+    const routeCard = $("route-card");
+    routeCard.removeAttribute("aria-busy");
+    routeCard.style.setProperty("--line-color", lineColor);
+    const codeEl = $("board-line-code");
+    codeEl.className = "line-badge";
+    codeEl.removeAttribute("aria-hidden");
+    codeEl.textContent = lineCode;
     const homeCorrName = corridorDisplayName(route.home_corridor);
     const destCorrName = corridorDisplayName(route.dest_corridor);
     $("board-line-name").textContent =
@@ -277,6 +392,7 @@
 
     const elig = (live.eligibility || {})[state.direction] || {};
     const armedBadge = $("alert-armed-badge");
+    armedBadge.style.width = "";
     if (elig.active) {
       armedBadge.className = "pill";
       armedBadge.innerHTML = `${svgIcon("bell-ring", "sm")}<span>Alerts on · ${escapeHtml(elig.reason)}</span>`;
@@ -314,6 +430,7 @@
 
     if (!deps.length) {
       state.lastBoardSig = null;
+      listEl.removeAttribute("aria-busy");
       listEl.innerHTML = `<div class="empty-state">No departures found for this direction today.</div>`;
       return;
     }
@@ -483,6 +600,7 @@
       `;
     }
 
+    listEl.removeAttribute("aria-busy");
     listEl.innerHTML = html;
 
     const earlierEl = listEl.querySelector(".earlier-details");
@@ -589,7 +707,24 @@
         : "";
 
     if (!det) {
-      return `<div class="dep-detail">${predLine}<span class="hint mb-0">Loading live stop timeline...</span></div>`;
+      const stopWidths = [102, 128, 92, 118, 96, 134, 88];
+      const stopSkels = stopWidths
+        .map(
+          (w) => `
+          <div class="stop-row">
+            <span class="skel" style="width:${w}px">&nbsp;</span>
+            <span class="skel" style="width:44px">&nbsp;</span>
+            <span class="train-num skel" style="width:40px">&nbsp;</span>
+          </div>`
+        )
+        .join("");
+      return `
+        <div class="dep-detail" aria-busy="true">
+          ${predLine}
+          <div class="hint mb-8"><span class="skel" style="width:142px">&nbsp;</span></div>
+          ${stopSkels}
+        </div>
+      `;
     }
     if (det.error) {
       return `<div class="dep-detail">${predLine}<span class="hint mb-0">Timeline unavailable: ${escapeHtml(det.error)}</span></div>`;
@@ -737,7 +872,9 @@
     const dName = routeStationName(route.dest_station) || "Destination";
 
     const rules = s.rules || [];
-    $("rules-list").innerHTML = rules.length
+    const rulesEl = $("rules-list");
+    rulesEl.removeAttribute("aria-busy");
+    rulesEl.innerHTML = rules.length
       ? rules
           .map((r) => {
             const daysTxt = formatDays(r.days);
@@ -1028,9 +1165,16 @@
     else if (time) qs.set("time", time);
 
     const box = $("pred-result");
-    box.innerHTML = `<span class="hint mb-0">Checking platform history...</span>`;
+    const reqSeq = (state.predReqSeq = (state.predReqSeq || 0) + 1);
+    if (state.predLoaded) {
+      const prevH = box.offsetHeight;
+      if (prevH > 0) box.style.minHeight = `${prevH}px`;
+      box.setAttribute("aria-busy", "true");
+      box.innerHTML = predictorSkeletonHtml();
+    }
     try {
       const res = await api(`/api/predict/platform?${qs.toString()}`);
+      if (reqSeq !== state.predReqSeq) return;
       const trips = res.available_trips || [];
       const tripSel = $("pred-trip");
       tripSel.innerHTML = trips.length
@@ -1094,19 +1238,28 @@
         ${candsHtml}
       `;
     } catch (err) {
+      if (reqSeq !== state.predReqSeq) return;
       box.innerHTML = `<span class="hint mb-0">Prediction unavailable: ${escapeHtml(err.message)}</span>`;
+    } finally {
+      if (reqSeq === state.predReqSeq) {
+        state.predLoaded = true;
+        box.removeAttribute("aria-busy");
+        box.style.minHeight = "";
+      }
     }
   }
 
-  async function loadAnalyticsAndEvents() {
+  async function loadAnalytics() {
     try {
-      const [ana, evResp] = await Promise.all([
-        api("/api/analytics?days=30"),
-        api(`/api/events?limit=80&type=${encodeURIComponent($("events-filter").value)}`),
-      ]);
+      const ana = await api("/api/analytics?days=30");
       const k = ana.kpis || {};
       const sampleCount = k.outcome_sample_count ?? k.total_outcomes ?? 0;
-      const sampleNote = sampleCount > 0 && sampleCount < 10 ? " (early sample)" : "";
+      const sampleNote =
+        ana.data_source === "snapshots_fallback"
+          ? " (snapshot preview)"
+          : sampleCount > 0 && sampleCount < 10
+          ? " (early sample)"
+          : "";
       $("kpi-context").textContent = `Last ${ana.days || 30} days · ${sampleCount} tracked trips${sampleNote}`;
 
       const avgDelayTxt = k.avg_delay_min != null ? `${Number(k.avg_delay_min).toFixed(1)}m` : "--";
@@ -1177,95 +1330,159 @@
           <tbody>
             ${drift
               .map(
-                (r) => `
+                (r) => {
+                  const u = r.mean_underestimation_min;
+                  const uCls = u != null && u >= 5 ? "text-danger" : u != null && u >= 2 ? "text-warn" : "";
+                  const p = r.phantom_ontime_pct;
+                  const pCls = p != null && p >= 40 ? "text-danger" : p != null && p >= 20 ? "text-warn" : "";
+                  return `
               <tr>
                 <td><b>${escapeHtml(r.bucket)}</b></td>
                 <td>${r.sample_count}</td>
                 <td>${r.mean_abs_error_min != null ? Number(r.mean_abs_error_min).toFixed(1) + "m" : "--"}</td>
-                <td>${r.mean_underestimation_min != null ? (r.mean_underestimation_min > 0 ? "+" : "") + Number(r.mean_underestimation_min).toFixed(1) + "m" : "--"}</td>
-                <td>${r.phantom_ontime_pct != null ? r.phantom_ontime_pct + "%" : "--"}</td>
-              </tr>`
+                <td class="${uCls}">${u != null ? (u > 0 ? "+" : "") + Number(u).toFixed(1) + "m" : "--"}</td>
+                <td class="${pCls}">${p != null ? p + "%" : "--"}</td>
+              </tr>`;
+                }
               )
               .join("")}
           </tbody>
         </table>
       `;
+      ["kpi-grid", "hourly-wrap", "drift-table-wrap"].forEach((id) => $(id)?.removeAttribute("aria-busy"));
+      state.analyticsLoaded = true;
+    } catch (err) {
+      ["kpi-grid", "hourly-wrap", "drift-table-wrap"].forEach((id) => $(id)?.removeAttribute("aria-busy"));
+      if (!state.analyticsLoaded) {
+        $("kpi-context").textContent = "Last 30 days";
+        $("hourly-wrap").innerHTML = `<p class="hint mb-0">Unable to load hourly trends.</p>`;
+        $("drift-table-wrap").innerHTML = `<p class="hint mb-0">Unable to load estimate accuracy.</p>`;
+      }
+      $("kpi-grid").innerHTML = `<div class="empty-state">Unable to load analytics: ${escapeHtml(err.message)}</div>`;
+    }
+  }
 
-      const plats = ana.platform_patterns || [];
-      $("platform-table-wrap").innerHTML = plats.length
-        ? `<table class="data-table">
-            <thead>
-              <tr>
-                <th>Train</th>
-                <th>Track</th>
-                <th>Consistency</th>
-                <th>Avg Lead</th>
-                <th>Sched</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${plats
-                .map(
-                  (p) => `<tr>
-                    <td>#${escapeHtml(p.trip_number)}</td>
-                    <td><b>${escapeHtml(p.most_common_platform)}</b></td>
-                    <td>${p.consistency_pct}% (${p.samples})</td>
-                    <td>${p.avg_lead_min != null ? p.avg_lead_min + "m" : "--"}</td>
-                    <td>${escapeHtml(p.sch_track || "--")}</td>
-                  </tr>`
-                )
-                .join("")}
-            </tbody>
-          </table>`
-        : `<p class="hint mb-0">Platform patterns accumulate automatically as trains run.</p>`;
+  function renderEventsPagination({ page, totalPages, total, offset, count, hasMore }) {
+    const nav = $("events-pagination");
+    if (!nav) return;
+    if (!total || total <= 0) {
+      nav.classList.add("hidden");
+      $("events-page-select").innerHTML = "";
+      $("events-page-summary").textContent = "";
+      return;
+    }
+    nav.classList.remove("hidden");
+    const select = $("events-page-select");
+    select.innerHTML = Array.from(
+      { length: totalPages },
+      (_, idx) => `<option value="${idx + 1}">Page ${idx + 1} of ${totalPages}</option>`
+    ).join("");
+    select.value = String(page);
+    select.disabled = totalPages <= 1;
 
-      const offs = ana.top_offenders || [];
-      $("offenders-table-wrap").innerHTML = offs.length
-        ? `<table class="data-table">
-            <thead>
-              <tr>
-                <th>Train</th>
-                <th>Runs</th>
-                <th>Avg Delay</th>
-                <th>Max</th>
-                <th>Worst Miss</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${offs
-                .map(
-                  (o) => `<tr>
-                    <td>#${escapeHtml(o.trip_number)}</td>
-                    <td>${o.runs}</td>
-                    <td>${o.avg_delay_min}m</td>
-                    <td>${o.max_delay_min}m</td>
-                    <td>${o.worst_miss_min != null ? "+" + o.worst_miss_min + "m" : "--"}</td>
-                  </tr>`
-                )
-                .join("")}
-            </tbody>
-          </table>`
-        : `<p class="hint mb-0">Frequent delay rankings populate as trip outcomes are recorded.</p>`;
+    const startIdx = count > 0 ? offset + 1 : 0;
+    const endIdx = offset + count;
+    $("events-page-summary").textContent = count > 0 ? `${startIdx}–${endIdx} of ${total}` : `${total} total`;
+    $("btn-events-prev").disabled = page <= 1;
+    $("btn-events-next").disabled = page >= totalPages || !hasMore;
+  }
+
+  async function loadEvents({ resetPage = false, scrollTop = false, showSkeleton = false, _clamped = false } = {}) {
+    if (resetPage) state.eventsPage = 1;
+    const page = Math.max(1, state.eventsPage || 1);
+    const offset = (page - 1) * EVENTS_PAGE_SIZE;
+    const evFilter = $("events-filter").value;
+    const evParams = new URLSearchParams({
+      limit: String(EVENTS_PAGE_SIZE),
+      offset: String(offset),
+    });
+    if (evFilter === "__global__") {
+      evParams.set("scope", "global");
+    } else if (evFilter) {
+      evParams.set("type", evFilter);
+    }
+
+    const listEl = $("events-list");
+    if (showSkeleton) {
+      listEl.setAttribute("aria-busy", "true");
+      listEl.innerHTML = eventsSkeletonHtml(6);
+      if (scrollTop) listEl.scrollTop = 0;
+      if ($("btn-events-prev")) $("btn-events-prev").disabled = true;
+      if ($("btn-events-next")) $("btn-events-next").disabled = true;
+      if ($("events-page-select")) $("events-page-select").disabled = true;
+    }
+
+    const reqSeq = ++state.eventsReqSeq;
+    try {
+      const evResp = await api(`/api/events?${evParams.toString()}`);
+      if (reqSeq !== state.eventsReqSeq) return;
 
       const events = evResp.events || [];
-      $("events-list").innerHTML = events.length
+      const total = Number(evResp.total ?? events.length);
+      const totalPages = Math.max(1, Math.ceil(total / EVENTS_PAGE_SIZE));
+      if (page > totalPages && total > 0 && !_clamped) {
+        state.eventsPage = totalPages;
+        return loadEvents({ scrollTop, showSkeleton: false, _clamped: true });
+      }
+      state.eventsPage = page;
+      state.eventsTotalPages = totalPages;
+      state.eventsLoaded = true;
+
+      const isGlobalScope = evResp.scope === "global" || $("events-filter").value === "__global__";
+      const myUserId = state.me?.user?.id && state.me.user.id !== "guest" ? state.me.user.id : null;
+      listEl.removeAttribute("aria-busy");
+      listEl.innerHTML = events.length
         ? events
-            .map(
-              (ev) => `
+            .map((ev) => {
+              const isOwn = Boolean(myUserId && ev.user_id === myUserId);
+              const isNet = ev.user_id === "__global__" || (isGlobalScope && !isOwn);
+              const pillCls = isNet ? "info" : ev.notified ? "" : "muted";
+              const pillLabel = isNet ? "Network" : ev.notified ? "Sent" : "Logged";
+              const lineName = ev.corridor ? corridorDisplayName(ev.corridor) : "";
+              const metaParts = [
+                fmtTime(ev.created_at),
+                lineName,
+                ev.event_type,
+                !isNet && ev.rule_matched ? ev.rule_matched : "",
+              ].filter(Boolean);
+              return `
             <div class="event-row">
               <div class="event-head">
                 <span>${escapeHtml(ev.title)}</span>
-                <span class="pill ${ev.notified ? "" : "muted"}">${ev.notified ? "Sent" : "Logged"}</span>
+                <span class="pill ${pillCls}">${pillLabel}</span>
               </div>
               <div>${escapeHtml(ev.body)}</div>
-              <div class="event-meta">${fmtTime(ev.created_at)} &middot; ${escapeHtml(ev.event_type)}${ev.rule_matched ? " &middot; " + escapeHtml(ev.rule_matched) : ""}</div>
-            </div>`
-            )
+              <div class="event-meta">${metaParts.map(escapeHtml).join(" &middot; ")}</div>
+            </div>`;
+            })
             .join("")
-        : `<div class="hint mb-0" style="padding:12px;">No events recorded for your profile yet.</div>`;
+        : `<div class="hint mb-0" style="padding:12px;">${
+            isGlobalScope
+              ? "No global network events recorded yet — platform, boarding, and delay changes across all GO lines appear here live."
+              : "No events recorded for your profile yet."
+          }</div>`;
+
+      if (scrollTop) {
+        listEl.scrollTop = 0;
+      }
+      renderEventsPagination({
+        page,
+        totalPages,
+        total,
+        offset,
+        count: events.length,
+        hasMore: Boolean(evResp.has_more ?? offset + events.length < total),
+      });
     } catch (err) {
-      $("kpi-grid").innerHTML = `<div class="empty-state">Unable to load analytics: ${escapeHtml(err.message)}</div>`;
+      if (reqSeq !== state.eventsReqSeq) return;
+      listEl.removeAttribute("aria-busy");
+      listEl.innerHTML = `<div class="empty-state">Unable to load events: ${escapeHtml(err.message)}</div>`;
+      renderEventsPagination({ page: 1, totalPages: 1, total: 0, offset: 0, count: 0, hasMore: false });
     }
+  }
+
+  function loadAnalyticsAndEvents() {
+    return Promise.all([loadAnalytics(), loadEvents()]);
   }
 
   async function loadSystemTab() {
@@ -1277,6 +1494,7 @@
       state.me = me;
       const u = me.user || {};
       $("profile-name-input").value = u.display_name || "Commuter";
+      $("profile-stats").removeAttribute("aria-busy");
       $("profile-stats").innerHTML = `
         <div class="stat-row"><span>Paired Browsers</span><b>${me.session_count ?? 1}</b></div>
         <div class="stat-row"><span>Push Subscriptions</span><b>${me.counts?.push_subs_count ?? 0}</b></div>
@@ -1285,11 +1503,12 @@
 
       const obs = h.snapshot_observations ?? h.snapshots_count ?? 0;
       const savedPct = obs > 0 ? Math.max(0, Math.round(100 * (1 - h.snapshots_count / obs))) : 0;
+      $("system-stats").removeAttribute("aria-busy");
       $("system-stats").innerHTML = `
         <div class="stat-row"><span>Poller Status</span><b>${h.poll_ok ? "Healthy" : "Error: " + escapeHtml(h.last_error || "unknown")}</b></div>
         <div class="stat-row"><span>Last Poll</span><b>${h.last_poll_at ? fmtRelative(h.last_poll_at) : "never"} (${h.last_poll_ms}ms)</b></div>
         <div class="stat-row"><span>Live Departures Cached</span><b>${h.trips_live}</b></div>
-        <div class="stat-row"><span>Snapshots Stored</span><b>${h.snapshots_count} (${obs} polls, ${savedPct}% coalesced)</b></div>
+        <div class="stat-row"><span>Snapshots Stored</span><b>${h.snapshots_count} (${obs} polls, ${savedPct}% saved)</b></div>
         <div class="stat-row"><span>Outcomes Stored</span><b>${h.outcomes_count}</b></div>
         <div class="stat-row"><span>Database Size</span><b>${h.db_size_kb != null ? h.db_size_kb + " KB" : "--"}</b></div>
       `;
@@ -1298,13 +1517,20 @@
         window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
       const swSupported = "serviceWorker" in navigator;
       const notifSupported = "Notification" in window;
+      $("ios-checklist").removeAttribute("aria-busy");
       $("ios-checklist").innerHTML = `
         <li>${window.isSecureContext ? svgIcon("circle-check", "sm ico-ok") : svgIcon("triangle-alert", "sm ico-warn")} <span>HTTPS Connection: <b>${window.isSecureContext ? "Yes" : "No (required for iOS Push)"}</b></span></li>
         <li>${standalone ? svgIcon("circle-check", "sm ico-ok") : svgIcon("info", "sm ico-info")} <span>Home Screen App: <b>${standalone ? "Installed" : "Running in browser tab"}</b></span></li>
         <li>${swSupported ? svgIcon("circle-check", "sm ico-ok") : svgIcon("circle-x", "sm ico-err")} <span>Service Worker: <b>${swSupported ? "Supported" : "Unavailable"}</b></span></li>
         <li>${notifSupported ? svgIcon("circle-check", "sm ico-ok") : svgIcon("info", "sm ico-info")} <span>Web Push API: <b>${notifSupported ? "Ready" : "Requires Home Screen app on iOS"}</b></span></li>
       `;
+      state.systemLoaded = true;
     } catch (err) {
+      ["profile-stats", "system-stats", "ios-checklist"].forEach((id) => $(id)?.removeAttribute("aria-busy"));
+      if (!state.systemLoaded) {
+        $("profile-stats").innerHTML = `<div class="hint mb-0">Profile stats unavailable.</div>`;
+        $("ios-checklist").innerHTML = `<li class="hint mb-0">Setup checks unavailable.</li>`;
+      }
       $("system-stats").innerHTML = `<div class="hint mb-0">Diagnostics unavailable: ${escapeHtml(err.message)}</div>`;
     }
   }
@@ -1318,6 +1544,9 @@
       renderBoard();
     } catch (err) {
       state.fetchError = err.message || "Network error";
+      if (!state.live) {
+        showBoardOfflineFallback();
+      }
       updateFreshnessUI();
     }
   }
@@ -1408,6 +1637,131 @@
     return lines.length ? lines.join(" ") : "No notification channels configured yet.";
   }
 
+  const ANALYTICS_HELP = {
+    predictor: {
+      title: "Union Platform Predictor",
+      intro: "Estimates the most likely Union Station boarding track using up to 90 days of recorded departures and today's timetable.",
+      items: [
+        ["Most Likely Track", "Predicted platform weighted toward exact matches of this train number, falling back to nearby departures on the same GO line or today's scheduled track."],
+        ["Confidence Tier", "High (>=70%), Moderate (40-69%), or Early estimate (<40%), combining historical consistency, sample count, and scheduled-track agreement."],
+        ["Platform Distribution Bars", "Top candidate tracks historically assigned to this train or time window (shown as X of Y observed runs)."],
+        ["Closest Train Snap", "When searching by 24h time, automatically matches the nearest Union departure on your selected GO line and station."],
+      ],
+    },
+    kpis: {
+      title: "Service Reliability",
+      intro: "Summary metrics across tracked GO departures in the last 30 days.",
+      items: [
+        ["On-Time (<3m)", "Percentage of tracked departures that left less than 3 minutes (180s) after their scheduled departure time."],
+        ["Average Delay & Worst", "Mean lateness across completed trips, with the sub-label showing the single longest delay recorded."],
+        ["Union Track Lead", "Average minutes before scheduled departure that Union Station first announces a gate/track, plus how often it matched the scheduled track."],
+        ["Short Trains", "Percentage of observed trips running with fewer coaches than scheduled (for example, 10 cars instead of 12)."],
+        ["Delays >=15m", "Count of tracked departures delayed 15 minutes or more (GO Transit's Service Guarantee threshold)."],
+        ["Snapshot Preview / Early Sample", "Shown when fewer than 10 completed trip outcomes are logged yet or while falling back to latest live snapshots."],
+      ],
+    },
+    hourly: {
+      title: "Delays by Hour",
+      intro: "Groups tracked departures by scheduled departure hour to spotlight rush-hour congestion.",
+      items: [
+        ["Bar Length & Thresholds", "Bar widths scale relative to the worst hour (minimum 5m scale). Green = <3m avg, Amber = >=3m, Red = >=7m."],
+        ["Avg (trips)", "Mean departure delay in minutes for that hour, followed by the sample count in parentheses."],
+      ],
+    },
+    drift: {
+      title: "Departure Estimate Accuracy",
+      intro: "Measures how accurate GO Transit's live delay predictions are before trains actually depart.",
+      items: [
+        ["Before Dep (T-30m to T-5m)", "Snapshot capture windows prior to scheduled departure: T-30m (25-35m), T-15m (12-18m), T-10m (8-12m), and T-5m (3-7m)."],
+        ["Trips", "Completed trips that had both a snapshot inside that time window and a recorded actual departure outcome."],
+        ["Avg Error", "Mean Absolute Error (|actual - predicted|) in minutes regardless of direction; lower means more accurate feed estimates."],
+        ["Under-Est", "Signed average (actual delay minus predicted delay). Positive +Xm means GO under-reported lateness until closer to departure."],
+        ["Surprise Late", "Percentage of trips still shown as On Time (<3m late) during that window that ended up leaving 5 or more minutes late."],
+      ],
+    },
+    events: {
+      title: "Recent Events",
+      intro: "View alerts from your personal commute route or watch live updates across the entire GO Rail network.",
+      items: [
+        ["All Events (Commute Route)", "Filtered to your active user profile's saved commute route and alert rules."],
+        ["All Events (Global Scope)", "Live deduplicated feed across all 7 GO Rail lines and Union platforms (platform assignments, boarding calls, delays, cancellations, and short trains)."],
+        ["Sent / Logged / Network", "Sent = alert dispatched by your rule; Logged = route state change recorded while alerts were disarmed; Network = system-wide event outside your saved route."],
+        ["Event Types", "Tracks platform announcements, platform switches, boarding ('Proceed'), delay starts/increases, cancellations, short trains, and geofence triggers."],
+      ],
+    },
+  };
+
+  function setupAnalyticsHelp() {
+    const modal = $("ana-help-modal");
+    const titleEl = $("ana-help-title");
+    const introEl = $("ana-help-intro");
+    const listEl = $("ana-help-list");
+    const toggleAllBtn = $("ana-help-all");
+    if (!modal || !titleEl || !introEl || !listEl || !toggleAllBtn) return;
+
+    let currentSection = "kpis";
+    let showingAll = false;
+
+    const renderModal = () => {
+      if (showingAll) {
+        titleEl.textContent = "All Analytics Metrics";
+        introEl.textContent = "Reference guide for every calculation shown on the Analytics tab.";
+        listEl.innerHTML = Object.values(ANALYTICS_HELP)
+          .map(
+            (sec) =>
+              `<div class="help-group-label">${escapeHtml(sec.title)}</div>` +
+              sec.items
+                .map(
+                  ([term, desc]) =>
+                    `<div class="guide-step"><div class="guide-step-head"><span class="guide-step-title">${escapeHtml(term)}</span></div><p>${escapeHtml(desc)}</p></div>`
+                )
+                .join("")
+          )
+          .join("");
+        toggleAllBtn.textContent = "Back to Section";
+      } else {
+        const sec = ANALYTICS_HELP[currentSection] || ANALYTICS_HELP.kpis;
+        titleEl.textContent = sec.title;
+        introEl.textContent = sec.intro;
+        listEl.innerHTML = sec.items
+          .map(
+            ([term, desc]) =>
+              `<div class="guide-step"><div class="guide-step-head"><span class="guide-step-title">${escapeHtml(term)}</span></div><p>${escapeHtml(desc)}</p></div>`
+          )
+          .join("");
+        toggleAllBtn.textContent = "All Sections";
+      }
+      listEl.scrollTop = 0;
+    };
+
+    const openHelp = (sectionKey) => {
+      currentSection = sectionKey && ANALYTICS_HELP[sectionKey] ? sectionKey : "kpis";
+      showingAll = false;
+      renderModal();
+      modal.classList.remove("hidden");
+    };
+
+    const closeHelp = () => modal.classList.add("hidden");
+
+    document.querySelectorAll("[data-ana-help]").forEach((btn) => {
+      btn.addEventListener("click", () => openHelp(btn.dataset.anaHelp));
+    });
+    toggleAllBtn.addEventListener("click", () => {
+      showingAll = !showingAll;
+      renderModal();
+    });
+    $("ana-help-close").addEventListener("click", closeHelp);
+    $("ana-help-done").addEventListener("click", closeHelp);
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeHelp();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !modal.classList.contains("hidden")) {
+        closeHelp();
+      }
+    });
+  }
+
   const GUIDE_STORAGE_KEY = "gtpp_guide_seen_v1";
 
   function setupHelpGuide() {
@@ -1460,12 +1814,54 @@
     } catch (_) {}
   }
 
+  async function forceReloadApp() {
+    const btn = $("btn-force-reload");
+    const ico = btn?.querySelector("svg");
+    if (btn) btn.disabled = true;
+    ico?.classList.add("spinning");
+    try {
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+      if ("serviceWorker" in navigator) {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) {
+          await reg.update().catch(() => {});
+          if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
+        }
+      }
+    } catch (_) {}
+    window.location.reload();
+  }
+
   async function init() {
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
+      const hadController = Boolean(navigator.serviceWorker.controller);
+      let swReloading = false;
+      let lastSwCheck = Date.now();
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (!hadController || swReloading) return;
+        swReloading = true;
+        window.location.reload();
+      });
+      navigator.serviceWorker
+        .register("/sw.js", { updateViaCache: "none" })
+        .then((reg) => {
+          reg.update().catch(() => {});
+          document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState !== "visible") return;
+            const now = Date.now();
+            if (now - lastSwCheck < 30000) return;
+            lastSwCheck = now;
+            reg.update().catch(() => {});
+          });
+        })
+        .catch(() => {});
     }
 
     setupHelpGuide();
+    setupAnalyticsHelp();
 
     document.querySelectorAll(".nav-btn").forEach((btn) => {
       btn.addEventListener("click", () => switchTab(btn.dataset.tab));
@@ -1484,6 +1880,9 @@
       topIcon?.classList.add("spinning");
       $("btn-poll-top").disabled = true;
       $("freshness-label").textContent = "Refreshing...";
+      if (!state.live) {
+        renderBoardSkeleton();
+      }
       try {
         state.live = await api("/api/poll", { method: "POST" });
         state.fetchError = null;
@@ -1491,6 +1890,9 @@
         if (state.tab === "system") loadSystemTab();
       } catch (err) {
         state.fetchError = err.message || "Refresh failed";
+        if (!state.live) {
+          showBoardOfflineFallback();
+        }
         updateFreshnessUI();
         showToast("Refresh failed: " + err.message, "err");
       } finally {
@@ -1501,6 +1903,7 @@
     $("btn-poll-top").addEventListener("click", doPoll);
     $("btn-poll-sys").addEventListener("click", doPoll);
     $("btn-conn-retry").addEventListener("click", doPoll);
+    $("btn-force-reload")?.addEventListener("click", forceReloadApp);
 
     $("btn-compact-db").addEventListener("click", async () => {
       const box = $("compact-result");
@@ -1709,6 +2112,11 @@
         });
         state.me = { user: res.user, session_count: 1 };
         state.settings = res.settings;
+        state.eventsPage = 1;
+        state.analyticsLoaded = false;
+        state.eventsLoaded = false;
+        state.predLoaded = false;
+        state.predictorInited = false;
         $("claim-code-input").value = "";
         $("link-code-display").classList.add("hidden");
         renderSettings();
@@ -1717,6 +2125,41 @@
         showToast("Device linked to profile");
       } catch (err) {
         showToast("Link failed: " + err.message, "err");
+      }
+    });
+
+    $("btn-remove-other-devices").addEventListener("click", async () => {
+      const confirmed = await openConfirm({
+        title: "Remove Other Devices?",
+        body: "Disconnects any other paired browsers and removes other/dangling push subscriptions on this profile. Your current device stays signed in and keeps its active notifications.",
+        okLabel: "Remove Others",
+      });
+      if (!confirmed) return;
+      try {
+        let keepEndpoint = null;
+        if ("serviceWorker" in navigator && "PushManager" in window) {
+          try {
+            const reg = await navigator.serviceWorker.getRegistration();
+            const sub = reg ? await reg.pushManager.getSubscription() : null;
+            if (sub?.endpoint) keepEndpoint = sub.endpoint;
+          } catch (_) {}
+        }
+        const res = await api("/api/session/remove-other-devices", {
+          method: "POST",
+          body: JSON.stringify({ keep_endpoint: keepEndpoint }),
+        });
+        state.me = { ...state.me, session_count: res.session_count, counts: res.counts };
+        loadSystemTab();
+        updateWebPushUI();
+        const sRm = res.sessions_removed || 0;
+        const pRm = res.push_subs_removed || 0;
+        if (sRm === 0 && pRm === 0) {
+          showToast("No other devices found on this profile", "info");
+        } else {
+          showToast(`Removed ${sRm} session${sRm === 1 ? "" : "s"} and ${pRm} push sub${pRm === 1 ? "" : "s"}`);
+        }
+      } catch (err) {
+        showToast("Failed to remove devices: " + err.message, "err");
       }
     });
 
@@ -1731,6 +2174,12 @@
         const res = await api("/api/session/reset", { method: "POST" });
         state.me = { user: res.user, session_count: 1 };
         state.settings = res.settings;
+        state.eventsPage = 1;
+        state.analyticsLoaded = false;
+        state.eventsLoaded = false;
+        state.predLoaded = false;
+        state.predictorInited = false;
+        state.systemLoaded = false;
         $("link-code-display").classList.add("hidden");
         renderSettings();
         await refreshLive();
@@ -1741,19 +2190,37 @@
       }
     });
 
-    $("events-filter").addEventListener("change", loadAnalyticsAndEvents);
+    $("events-filter").addEventListener("change", () => loadEvents({ resetPage: true, scrollTop: true, showSkeleton: true }));
+    $("btn-events-prev").addEventListener("click", () => {
+      if (state.eventsPage > 1) {
+        state.eventsPage -= 1;
+        loadEvents({ scrollTop: true, showSkeleton: true });
+      }
+    });
+    $("btn-events-next").addEventListener("click", () => {
+      if (state.eventsPage < state.eventsTotalPages) {
+        state.eventsPage += 1;
+        loadEvents({ scrollTop: true, showSkeleton: true });
+      }
+    });
+    $("events-page-select").addEventListener("change", (e) => {
+      state.eventsPage = Math.max(1, Number(e.target.value) || 1);
+      loadEvents({ scrollTop: true, showSkeleton: true });
+    });
 
     try {
-      const [catalog, settings, me] = await Promise.all([
-        api("/api/catalog"),
-        api("/api/settings"),
-        api("/api/me"),
-      ]);
+      const [catalog, me] = await Promise.all([api("/api/catalog"), api("/api/me")]);
+      const settings = await api("/api/settings");
       state.catalog = catalog;
-      state.settings = settings;
       state.me = me;
+      state.settings = settings;
       renderSettings();
     } catch (err) {
+      $("rules-list").removeAttribute("aria-busy");
+      if (!state.settings) {
+        $("rules-list").innerHTML = `<div class="hint mb-0" style="padding:12px;">Unable to load alert rules.</div>`;
+        updateWebPushUI();
+      }
       showToast("Failed to load configuration: " + err.message, "err");
     }
 
